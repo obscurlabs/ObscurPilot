@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./audio-pipeline": {
+      "types": "./dist/audio-pipeline.d.ts",
+      "import": "./dist/audio-pipeline.js"
+    },
     "./activity": {
       "types": "./dist/activity.d.ts",
       "import": "./dist/activity.js"

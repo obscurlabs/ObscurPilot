@@ -14550,7 +14550,14 @@ var MAX_IPC_ENVELOPE_BYTES = 64 * 1024;
 var IPC_CHANNELS = {
   getBootstrap: "app:get-bootstrap:v1",
   getSnapshot: "state:get-snapshot:v1",
-  stateChanged: "state:changed:v1"
+  stateChanged: "state:changed:v1",
+  pttCommand: "audio:ptt-command:v1",
+  pttSetAccelerator: "audio:set-accelerator:v1",
+  audioListDevices: "audio:list-devices:v1",
+  audioSelectDevice: "audio:select-device:v1",
+  pttChanged: "audio:ptt-changed:v1",
+  obsGetSnapshot: "obs:get-snapshot:v1",
+  obsReconnect: "obs:reconnect:v1"
 };
 var RequestMetadataSchema = external_exports.object({
   protocolVersion: external_exports.literal(IPC_PROTOCOL_VERSION),
@@ -14606,6 +14613,43 @@ var BootstrapProjectionSchema = external_exports.object({
   }).strict()
 }).strict();
 
+// ../../packages/contracts/dist/audio.js
+var PttPhaseSchema = external_exports.enum([
+  "idle",
+  "arming",
+  "capturing",
+  "encoding",
+  "ready",
+  "rejected",
+  "error"
+]);
+var PttProjectionSchema = external_exports.object({
+  phase: PttPhaseSchema,
+  sessionId: external_exports.string().uuid().optional(),
+  elapsedMs: external_exports.number().int().nonnegative(),
+  level: external_exports.number().min(0).max(1),
+  reasonCode: external_exports.string().min(1),
+  clip: external_exports.object({
+    clipId: external_exports.string().uuid(),
+    durationMs: external_exports.number().int().positive(),
+    bytes: external_exports.number().int().positive(),
+    mimeType: external_exports.literal("audio/wav"),
+    truncated: external_exports.boolean()
+  }).strict().optional()
+}).strict();
+var PttCommandPayloadSchema = external_exports.object({ action: external_exports.enum(["press", "release", "cancel"]) }).strict();
+var SetPttAcceleratorPayloadSchema = external_exports.object({ accelerator: external_exports.string().trim().min(1).max(64) }).strict();
+var AudioDeviceSchema = external_exports.object({
+  deviceId: external_exports.string().min(1).max(512),
+  label: external_exports.string().max(256),
+  isDefault: external_exports.boolean()
+}).strict();
+var AudioDeviceListSchema = external_exports.object({ devices: external_exports.array(AudioDeviceSchema).max(64) }).strict();
+var SelectAudioDevicePayloadSchema = external_exports.object({ deviceId: external_exports.string().min(1).max(512) }).strict();
+var EmptyPayloadSchema = external_exports.object({}).strict();
+var OperationAcceptedSchema = external_exports.object({ accepted: external_exports.literal(true) }).strict();
+var PttChangedEventSchema = createEventEnvelopeSchema(PttProjectionSchema);
+
 // ../../packages/contracts/dist/state.js
 var ConnectionProviderSchema = external_exports.enum(["obs", "twitch", "groq", "supabase"]);
 var ConnectionPhaseSchema = external_exports.enum([
@@ -14656,6 +14700,33 @@ var GetSnapshotPayloadSchema = external_exports.object({
 }).strict();
 var GetSnapshotRequestSchema = createRequestEnvelopeSchema(GetSnapshotPayloadSchema);
 
+// ../../packages/contracts/dist/obs.js
+var ObsSceneSchema = external_exports.object({ name: external_exports.string().min(1).max(512), index: external_exports.number().int().nonnegative() }).strict();
+var ObsInputSchema = external_exports.object({ name: external_exports.string().min(1).max(512), kind: external_exports.string().min(1).max(256) }).strict();
+var ObsSnapshotSchema = external_exports.object({
+  snapshotVersion: external_exports.number().int().nonnegative(),
+  generation: external_exports.number().int().nonnegative(),
+  capturedAt: external_exports.string().datetime({ offset: true }),
+  obsVersion: external_exports.string().min(1),
+  webSocketVersion: external_exports.string().min(1),
+  rpcVersion: external_exports.number().int().positive(),
+  sceneCollectionName: external_exports.string().max(512),
+  currentProgramSceneName: external_exports.string().max(512),
+  currentPreviewSceneName: external_exports.string().max(512).nullable(),
+  studioModeEnabled: external_exports.boolean(),
+  streamActive: external_exports.boolean(),
+  recordActive: external_exports.boolean(),
+  scenes: external_exports.array(ObsSceneSchema).max(1e3),
+  inputs: external_exports.array(ObsInputSchema).max(5e3)
+}).strict();
+var ObsProjectionSchema = external_exports.object({
+  available: external_exports.boolean(),
+  snapshot: ObsSnapshotSchema.optional(),
+  reasonCode: external_exports.string().min(1)
+}).strict();
+var GetObsSnapshotPayloadSchema = external_exports.object({}).strict();
+var ReconnectObsPayloadSchema = external_exports.object({}).strict();
+
 // electron/preload-api.ts
 var RendererIpcError = class extends Error {
   constructor(code, message, retryable, correlationId) {
@@ -14695,7 +14766,56 @@ function createRendererApi(ipc) {
         subscribed = false;
         ipc.removeListener(IPC_CHANNELS.stateChanged, wrapped);
       };
-    }
+    },
+    commandPtt: (action) => invoke(
+      ipc,
+      IPC_CHANNELS.pttCommand,
+      PttCommandPayloadSchema.parse({ action }),
+      OperationAcceptedSchema
+    ),
+    setPttAccelerator: (accelerator) => invoke(
+      ipc,
+      IPC_CHANNELS.pttSetAccelerator,
+      SetPttAcceleratorPayloadSchema.parse({ accelerator }),
+      OperationAcceptedSchema
+    ),
+    listAudioDevices: () => invoke(
+      ipc,
+      IPC_CHANNELS.audioListDevices,
+      EmptyPayloadSchema.parse({}),
+      AudioDeviceListSchema
+    ),
+    selectAudioDevice: (deviceId) => invoke(
+      ipc,
+      IPC_CHANNELS.audioSelectDevice,
+      SelectAudioDevicePayloadSchema.parse({ deviceId }),
+      OperationAcceptedSchema
+    ),
+    onPttChanged: (listener) => {
+      let subscribed = true;
+      const wrapped = (_event, rawEnvelope) => {
+        const envelope = PttChangedEventSchema.parse(rawEnvelope);
+        listener(envelope.payload);
+      };
+      ipc.on(IPC_CHANNELS.pttChanged, wrapped);
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        ipc.removeListener(IPC_CHANNELS.pttChanged, wrapped);
+      };
+    },
+    getObsSnapshot: () => invoke(
+      ipc,
+      IPC_CHANNELS.obsGetSnapshot,
+      GetObsSnapshotPayloadSchema.parse({}),
+      ObsProjectionSchema
+    ),
+    reconnectObs: () => invoke(
+      ipc,
+      IPC_CHANNELS.obsReconnect,
+      ReconnectObsPayloadSchema.parse({}),
+      OperationAcceptedSchema
+    )
   });
 }
 async function invoke(ipc, channel, payload, outputSchema) {

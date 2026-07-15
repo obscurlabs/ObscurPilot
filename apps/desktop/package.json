@@ -10,11 +10,12 @@
   "scripts": {
     "dev": "npm run build:electron && concurrently -k -s first \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "build": "npm run clean && npm run build:electron && vite build",
-    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist-electron/main.cjs --external:electron && esbuild electron/preload.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist-electron/preload.cjs --external:electron",
+    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist-electron/main.cjs --external:electron && esbuild electron/preload.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist-electron/preload.cjs --external:electron && esbuild electron/audio-capture-preload.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist-electron/audio-preload.cjs --external:electron",
     "clean": "rimraf dist-electron dist-renderer .types",
     "package:dir": "electron-builder --dir"
   },
   "dependencies": {
+    "@obscurpilot/adapters-obs": "0.1.0",
     "@obscurpilot/contracts": "0.1.0",
     "@obscurpilot/domain": "0.1.0",
     "class-variance-authority": "0.7.1",

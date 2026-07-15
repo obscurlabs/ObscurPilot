@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./audio": {
+      "types": "./dist/audio.d.ts",
+      "import": "./dist/audio.js"
+    },
     "./bootstrap": {
       "types": "./dist/bootstrap.d.ts",
       "import": "./dist/bootstrap.js"
@@ -15,6 +19,10 @@
     "./ipc": {
       "types": "./dist/ipc.d.ts",
       "import": "./dist/ipc.js"
+    },
+    "./obs": {
+      "types": "./dist/obs.d.ts",
+      "import": "./dist/obs.js"
     },
     "./renderer-api": {
       "types": "./dist/renderer-api.d.ts",

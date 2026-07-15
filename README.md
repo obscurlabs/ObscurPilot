@@ -15,15 +15,20 @@ ObscurPilot is a cloud-hybrid, ultra-low-latency, voice-controlled live-producti
 9. [Stage 1 monorepo and quality gate](docs/stage-1/README.md)
 10. [Stage 2 secure desktop and IPC gate](docs/stage-2/README.md)
 11. [Stage 3 domain kernel gate](docs/stage-3/README.md)
+12. [Experience and motion architecture](docs/07-experience-architecture.md)
+13. [Stage 4 audio pipeline gate](docs/stage-4/README.md)
+14. [Stage 5 OBS bridge gate](docs/stage-5/README.md)
 
 ## Delivery status
 
-| Stage                                             | Status   | Evidence                                               |
-| ------------------------------------------------- | -------- | ------------------------------------------------------ |
-| Stage 0 - Architecture and measurable contracts   | Complete | [Acceptance record](docs/stage-0/acceptance-record.md) |
-| Stage 1 - Monorepo and quality foundation         | Complete | [Acceptance record](docs/stage-1/acceptance-record.md) |
-| Stage 2 - Secure desktop shell and IPC spine      | Complete | [Acceptance record](docs/stage-2/acceptance-record.md) |
-| Stage 3 - Domain kernel and connection supervisor | Complete | [Acceptance record](docs/stage-3/acceptance-record.md) |
+| Stage                                             | Status                         | Evidence                                               |
+| ------------------------------------------------- | ------------------------------ | ------------------------------------------------------ |
+| Stage 0 - Architecture and measurable contracts   | Complete                       | [Acceptance record](docs/stage-0/acceptance-record.md) |
+| Stage 1 - Monorepo and quality foundation         | Complete                       | [Acceptance record](docs/stage-1/acceptance-record.md) |
+| Stage 2 - Secure desktop shell and IPC spine      | Complete                       | [Acceptance record](docs/stage-2/acceptance-record.md) |
+| Stage 3 - Domain kernel and connection supervisor | Complete                       | [Acceptance record](docs/stage-3/acceptance-record.md) |
+| Stage 4 - Push-to-talk and local audio pipeline   | Complete                       | [Acceptance record](docs/stage-4/acceptance-record.md) |
+| Stage 5 - Authoritative local OBS bridge          | Implemented; live gate pending | [Acceptance record](docs/stage-5/acceptance-record.md) |
 
 ## Fixed technology baseline
 

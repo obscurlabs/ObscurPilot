@@ -12,3 +12,4 @@ ADRs are immutable decision history. A decision may be replaced only by a newer 
 | [0006](0006-release-and-update-strategy.md)    | Release and update strategy             | Accepted |
 | [0007](0007-platform-adapter-extensibility.md) | Platform adapter extensibility          | Accepted |
 | [0008](0008-contract-versioning.md)            | Contract and migration versioning       | Accepted |
+| [0009](0009-state-driven-experience-motion.md) | State-driven experience and motion      | Accepted |

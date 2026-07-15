@@ -1,4 +1,10 @@
-import { _electron as electron, expect, test, type Page } from '@playwright/test';
+import {
+  _electron as electron,
+  expect,
+  test,
+  type ElectronApplication,
+  type Page,
+} from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
@@ -22,13 +28,35 @@ async function expectNarrowRendererBoundary(page: Page): Promise<void> {
   });
 
   expect(boundary).toEqual({
-    apiKeys: ['getBootstrap', 'getSnapshot', 'onStateChanged'],
+    apiKeys: [
+      'getBootstrap',
+      'getSnapshot',
+      'onStateChanged',
+      'commandPtt',
+      'setPttAccelerator',
+      'listAudioDevices',
+      'selectAudioDevice',
+      'onPttChanged',
+      'getObsSnapshot',
+      'reconnectObs',
+    ],
     requireType: 'undefined',
     processType: 'undefined',
   });
 
-  await expect(page.getByText('Stages 2–3')).toBeVisible();
+  await expect(page.getByText('Stages 4–5')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Hold to speak' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Connection supervisors' })).toBeVisible();
+}
+
+async function getMainWindow(application: ElectronApplication): Promise<Page> {
+  await application.firstWindow();
+  await expect
+    .poll(() => application.windows().some((page) => page.url() === 'app://bundle/index.html'))
+    .toBe(true);
+  const mainWindow = application.windows().find((page) => page.url() === 'app://bundle/index.html');
+  if (mainWindow === undefined) throw new Error('Main ObscurPilot window was not created');
+  return mainWindow;
 }
 
 test('production renderer starts behind the narrow preload boundary', async () => {
@@ -48,7 +76,7 @@ test('production renderer starts behind the narrow preload boundary', async () =
   });
 
   try {
-    const page = await electronApplication.firstWindow();
+    const page = await getMainWindow(electronApplication);
     await expectNarrowRendererBoundary(page);
     for (let reload = 0; reload < 5; reload += 1) {
       await page.reload();
@@ -65,7 +93,7 @@ test('unsigned unpacked Windows artifact starts successfully', async () => {
 
   const electronApplication = await electron.launch({ executablePath });
   try {
-    await expectNarrowRendererBoundary(await electronApplication.firstWindow());
+    await expectNarrowRendererBoundary(await getMainWindow(electronApplication));
   } finally {
     await electronApplication.close();
   }

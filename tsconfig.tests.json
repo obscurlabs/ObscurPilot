@@ -16,5 +16,9 @@
     "apps/desktop/electron/security.ts",
     "apps/desktop/src/lib/state-projection.ts"
   ],
-  "references": [{ "path": "./packages/contracts" }, { "path": "./packages/domain" }]
+  "references": [
+    { "path": "./packages/contracts" },
+    { "path": "./packages/domain" },
+    { "path": "./packages/adapters-obs" }
+  ]
 }

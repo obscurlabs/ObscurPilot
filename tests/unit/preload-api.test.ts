@@ -79,7 +79,18 @@ class FakeRendererIpc {
 describe('preload capability API', () => {
   it('validates request/response envelopes without exposing raw IPC', async () => {
     const api = createRendererApi(new FakeRendererIpc());
-    expect(Object.keys(api)).toEqual(['getBootstrap', 'getSnapshot', 'onStateChanged']);
+    expect(Object.keys(api)).toEqual([
+      'getBootstrap',
+      'getSnapshot',
+      'onStateChanged',
+      'commandPtt',
+      'setPttAccelerator',
+      'listAudioDevices',
+      'selectAudioDevice',
+      'onPttChanged',
+      'getObsSnapshot',
+      'reconnectObs',
+    ]);
     await expect(api.getBootstrap()).resolves.toMatchObject({ app: { name: 'ObscurPilot' } });
     await expect(api.getSnapshot()).resolves.toMatchObject({ snapshotVersion: 0 });
     expect(Object.isFrozen(api)).toBe(true);

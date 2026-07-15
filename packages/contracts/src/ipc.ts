@@ -8,6 +8,13 @@ export const IPC_CHANNELS = {
   getBootstrap: 'app:get-bootstrap:v1',
   getSnapshot: 'state:get-snapshot:v1',
   stateChanged: 'state:changed:v1',
+  pttCommand: 'audio:ptt-command:v1',
+  pttSetAccelerator: 'audio:set-accelerator:v1',
+  audioListDevices: 'audio:list-devices:v1',
+  audioSelectDevice: 'audio:select-device:v1',
+  pttChanged: 'audio:ptt-changed:v1',
+  obsGetSnapshot: 'obs:get-snapshot:v1',
+  obsReconnect: 'obs:reconnect:v1',
 } as const;
 
 const RequestMetadataSchema = z

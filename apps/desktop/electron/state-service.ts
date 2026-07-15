@@ -50,6 +50,22 @@ export class MainStateService {
     this.store.mutate({ ...current, lifecycle }, [{ kind: 'lifecycle', value: lifecycle }]);
   }
 
+  public setConnection(connection: ConnectionProjection): void {
+    const current = this.store.snapshot().state;
+    const previous = current.connections[connection.provider];
+    if (
+      previous.phase === connection.phase &&
+      previous.attempt === connection.attempt &&
+      previous.reasonCode === connection.reasonCode
+    ) {
+      return;
+    }
+    const connections = { ...current.connections, [connection.provider]: connection };
+    this.store.mutate({ ...current, connections }, [
+      { kind: 'connection', provider: connection.provider, value: connection },
+    ]);
+  }
+
   public subscribe(listener: (event: VersionedPatchEvent<StatePatch>) => void): () => void {
     return this.store.subscribe(listener);
   }

@@ -9,6 +9,12 @@ export default defineConfig({
     emptyOutDir: true,
     outDir: 'dist-renderer',
     sourcemap: false,
+    rollupOptions: {
+      input: {
+        main: resolve(import.meta.dirname, 'index.html'),
+        audioCapture: resolve(import.meta.dirname, 'audio-capture.html'),
+      },
+    },
   },
   plugins: [react(), tailwindcss()],
   resolve: {

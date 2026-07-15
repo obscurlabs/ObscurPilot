@@ -3,6 +3,16 @@ import {
   BootstrapProjectionSchema,
 } from '@obscurpilot/contracts/bootstrap';
 import {
+  AudioDeviceListSchema,
+  EmptyPayloadSchema,
+  OperationAcceptedSchema,
+  PttChangedEventSchema,
+  PttCommandPayloadSchema,
+  SelectAudioDevicePayloadSchema,
+  SetPttAcceleratorPayloadSchema,
+  type PttProjection,
+} from '@obscurpilot/contracts/audio';
+import {
   createResultEnvelopeSchema,
   IPC_CHANNELS,
   IPC_PROTOCOL_VERSION,
@@ -14,6 +24,11 @@ import {
   type StateChanged,
 } from '@obscurpilot/contracts/state';
 import type { ObscurPilotRendererApi } from '@obscurpilot/contracts/renderer-api';
+import {
+  GetObsSnapshotPayloadSchema,
+  ObsProjectionSchema,
+  ReconnectObsPayloadSchema,
+} from '@obscurpilot/contracts/obs';
 import type { ZodType } from 'zod';
 
 interface RendererIpc {
@@ -63,6 +78,61 @@ export function createRendererApi(ipc: RendererIpc): Readonly<ObscurPilotRendere
         ipc.removeListener(IPC_CHANNELS.stateChanged, wrapped);
       };
     },
+    commandPtt: (action: 'press' | 'release' | 'cancel') =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.pttCommand,
+        PttCommandPayloadSchema.parse({ action }),
+        OperationAcceptedSchema,
+      ),
+    setPttAccelerator: (accelerator: string) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.pttSetAccelerator,
+        SetPttAcceleratorPayloadSchema.parse({ accelerator }),
+        OperationAcceptedSchema,
+      ),
+    listAudioDevices: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.audioListDevices,
+        EmptyPayloadSchema.parse({}),
+        AudioDeviceListSchema,
+      ),
+    selectAudioDevice: (deviceId: string) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.audioSelectDevice,
+        SelectAudioDevicePayloadSchema.parse({ deviceId }),
+        OperationAcceptedSchema,
+      ),
+    onPttChanged: (listener: (projection: Readonly<PttProjection>) => void) => {
+      let subscribed = true;
+      const wrapped = (_event: unknown, rawEnvelope: unknown) => {
+        const envelope = PttChangedEventSchema.parse(rawEnvelope);
+        listener(envelope.payload);
+      };
+      ipc.on(IPC_CHANNELS.pttChanged, wrapped);
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        ipc.removeListener(IPC_CHANNELS.pttChanged, wrapped);
+      };
+    },
+    getObsSnapshot: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.obsGetSnapshot,
+        GetObsSnapshotPayloadSchema.parse({}),
+        ObsProjectionSchema,
+      ),
+    reconnectObs: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.obsReconnect,
+        ReconnectObsPayloadSchema.parse({}),
+        OperationAcceptedSchema,
+      ),
   });
 }
 

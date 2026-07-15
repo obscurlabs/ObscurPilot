@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { net, protocol } from 'electron';
+import { net, protocol, type Protocol } from 'electron';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -15,10 +15,10 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-export function registerApplicationProtocol(): void {
+export function registerApplicationProtocol(registrar: Pick<Protocol, 'handle'> = protocol): void {
   const rendererRoot = resolve(__dirname, '../dist-renderer');
 
-  protocol.handle('app', (request) => {
+  registrar.handle('app', (request) => {
     if (request.method !== 'GET') {
       return new Response('Method not allowed', { status: 405 });
     }

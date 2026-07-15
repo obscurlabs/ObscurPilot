@@ -62,7 +62,7 @@ Each stage is a hard gate. Work may be prepared in parallel, but no dependent st
 
 **Prerequisites:** Stage 3.
 
-**Tasks:** implement accelerator settings/registration, device selection, capture adapter, ring buffer, silence/minimum/maximum duration rules, encoder, press/release/cancel FSM, level projection, audio resource disposal, interruption recovery, and OS-secure settings storage.
+**Tasks:** implement accelerator settings/registration, device selection, isolated capture adapter, ring buffer, silence/minimum/maximum duration rules, encoder, press/release/cancel FSM, <= 30 Hz level projection, audio resource disposal, interruption recovery, OS-secure settings storage, and the interaction projection defined in [experience architecture](07-experience-architecture.md).
 
 **Definition of Done:** race, rapid-tap, stuck-key, device-loss, oversized-input, and shutdown-during-capture tests pass; 1,000 capture cycles show no growing handles or memory trend; dispatch overhead meets the local budget.
 
@@ -72,7 +72,7 @@ Each stage is a hard gate. Work may be prepared in parallel, but no dependent st
 
 **Prerequisites:** Stages 3–4; compatible OBS test fixture.
 
-**Tasks:** implement OBS config secret handling, adapter lifecycle, handshake/version check, event-intent selection, snapshot builder, synchronization buffer, reconnect reconciliation, normalized events, command preconditions/timeouts, tool definitions, and IPC projections.
+**Tasks:** implement OBS config secret handling, adapter lifecycle, handshake/version check, event-intent selection, snapshot builder, synchronization buffer, reconnect reconciliation, normalized events, command preconditions/timeouts, uncertainty/non-replay policy, observe-only tool definition, and redacted IPC/health projections.
 
 **Definition of Done:** integration suite against real OBS validates connect/auth failure/version mismatch, snapshot accuracy, event ordering, socket loss, OBS restart, command timeout, and reconciliation; uncertain queued commands never execute after reconnect without valid policy/preconditions.
 
@@ -102,7 +102,7 @@ Each stage is a hard gate. Work may be prepared in parallel, but no dependent st
 
 **Prerequisites:** Stage 4; secure Groq credential injection.
 
-**Tasks:** create main-process Groq client factory; multipart transcription adapter; deadlines/abort; error translation; retry and circuit breaker; transcript normalization; privacy/retention controls; latency metrics and redacted diagnostics.
+**Tasks:** create main-process Groq client factory; multipart transcription adapter; deadlines/abort; error translation; retry and circuit breaker; transcript normalization; privacy/retention controls; latency metrics and redacted diagnostics; publish transcribing interaction state without exposing audio or transcript content.
 
 **Definition of Done:** recorded fixtures cover silence, accents, noise, maximum duration, timeout, 429, 5xx, malformed response, cancel, and credential failure; no audio/transcript leaks under default settings; local dispatch meets budget.
 
@@ -112,7 +112,7 @@ Each stage is a hard gate. Work may be prepared in parallel, but no dependent st
 
 **Prerequisites:** Stages 3, 5, 7, and 8.
 
-**Tasks:** create model selection/fallback config; prompt and tool-schema registry with versions; OpenAI-compatible payload adapter; validate structured tool calls; build execution context from redacted snapshots; enforce grants, confirmation, limits, idempotency, stale-state preconditions, and bounded feedback turns; record model/tool/policy versions.
+**Tasks:** create model selection/fallback config; prompt and tool-schema registry with versions; OpenAI-compatible payload adapter; validate structured tool calls; build execution context from redacted snapshots; enforce grants, confirmation, limits, idempotency, stale-state preconditions, and bounded feedback turns; record model/tool/policy versions; publish typed reasoning/tool-active/confirmation states.
 
 **Definition of Done:** adversarial corpus proves prompt injection cannot bypass tool catalog/grants; malformed or hallucinated calls fail closed; confirmations expire; loops terminate at every ceiling; golden intents remain stable across configured models; duplicate retries do not duplicate side effects.
 
@@ -122,7 +122,7 @@ Each stage is a hard gate. Work may be prepared in parallel, but no dependent st
 
 **Prerequisites:** stable IPC projections from Stages 2–9.
 
-**Tasks:** define Tailwind dark tokens and shadcn primitives; implement health panels, push-to-talk states, pending confirmation, virtualized activity timeline, filter/pagination, settings, error recovery, Groq reaction orb states, reduced-motion alternatives, and `speechSynthesis` queue/cancel/fallback; batch high-frequency updates.
+**Tasks:** finalize the semantic dark tokens and shadcn primitives from [experience architecture](07-experience-architecture.md); implement adaptive health panels, push-to-talk states, pending confirmation, virtualized activity timeline, filter/pagination, settings, actionable error recovery, the shared AI presence for listening/transcribing/reasoning/tool/speaking states, reduced-motion alternatives, and `speechSynthesis` queue/cancel/fallback; batch high-frequency updates and pause nonessential motion while hidden.
 
 **Definition of Done:** keyboard and screen-reader flows pass; reduced motion works; 10,000-event fixture stays within frame/memory budgets; reload reconstructs from snapshot; every error code has an actionable presentation; no authoritative mutation occurs solely in renderer state.
 

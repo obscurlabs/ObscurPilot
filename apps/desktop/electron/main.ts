@@ -4,13 +4,29 @@ import {
   GetBootstrapPayloadSchema,
   type BootstrapProjection,
 } from '@obscurpilot/contracts/bootstrap';
+import {
+  AudioDeviceListSchema,
+  EmptyPayloadSchema,
+  OperationAcceptedSchema,
+  PttCommandPayloadSchema,
+  SelectAudioDevicePayloadSchema,
+  SetPttAcceleratorPayloadSchema,
+} from '@obscurpilot/contracts/audio';
 import { IPC_CHANNELS } from '@obscurpilot/contracts/ipc';
+import {
+  GetObsSnapshotPayloadSchema,
+  ObsProjectionSchema,
+  ReconnectObsPayloadSchema,
+} from '@obscurpilot/contracts/obs';
+import { ObsBridge } from '@obscurpilot/adapters-obs/boundary';
 import {
   AppSnapshotSchema,
   GetSnapshotPayloadSchema,
   StateChangedEventSchema,
 } from '@obscurpilot/contracts/state';
 import { app, BrowserWindow, ipcMain, session, type IpcMainInvokeEvent } from 'electron';
+import { resolve } from 'node:path';
+import { PttAudioService } from './audio-service.js';
 import { registerApplicationProtocol } from './application-protocol.js';
 import {
   getDevelopmentServerUrl,
@@ -25,7 +41,8 @@ import {
   isTrustedRendererUrl,
 } from './security.js';
 import { MainStateService } from './state-service.js';
-import { createMainWindow } from './window-manager.js';
+import { SecureSettingsStore } from './secure-settings.js';
+import { createAudioCaptureWindow, createMainWindow } from './window-manager.js';
 
 const lifecycle = new LifecycleScope();
 const stateService = new MainStateService();
@@ -108,6 +125,107 @@ async function startApplication(): Promise<void> {
     }),
   );
 
+  const captureWindow = await createAudioCaptureWindow(isDevelopment, developmentServerUrl);
+  const settings = new SecureSettingsStore(resolve(app.getPath('userData'), 'secure-settings.enc'));
+  const audioService = new PttAudioService(ipcMain, captureWindow, settings, (envelope) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && window.id !== captureWindow.id) {
+        window.webContents.send(IPC_CHANNELS.pttChanged, envelope);
+      }
+    }
+  });
+  await audioService.start();
+  lifecycle.add(() => audioService.dispose());
+
+  const obsBridge = new ObsBridge({
+    url: environment.OBS_WEBSOCKET_URL,
+    ...(environment.OBS_WEBSOCKET_PASSWORD === undefined
+      ? {}
+      : { password: environment.OBS_WEBSOCKET_PASSWORD }),
+    onConnection: (projection) => stateService.setConnection(projection),
+  });
+  lifecycle.add(() => obsBridge.dispose());
+
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.pttCommand,
+      payloadSchema: PttCommandPayloadSchema,
+      resultSchema: OperationAcceptedSchema,
+      isTrustedSender: trustedSender,
+      handler: ({ payload }) => {
+        if (payload.action === 'press') audioService.press();
+        if (payload.action === 'release') audioService.release();
+        if (payload.action === 'cancel') audioService.cancel();
+        return { accepted: true as const };
+      },
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.pttSetAccelerator,
+      payloadSchema: SetPttAcceleratorPayloadSchema,
+      resultSchema: OperationAcceptedSchema,
+      isTrustedSender: trustedSender,
+      handler: async ({ payload }) => {
+        await audioService.setAccelerator(payload.accelerator);
+        return { accepted: true as const };
+      },
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.audioListDevices,
+      payloadSchema: EmptyPayloadSchema,
+      resultSchema: AudioDeviceListSchema,
+      isTrustedSender: trustedSender,
+      handler: () => audioService.listDevices(),
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.audioSelectDevice,
+      payloadSchema: SelectAudioDevicePayloadSchema,
+      resultSchema: OperationAcceptedSchema,
+      isTrustedSender: trustedSender,
+      handler: async ({ payload }) => {
+        await audioService.selectDevice(payload.deviceId);
+        return { accepted: true as const };
+      },
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.obsGetSnapshot,
+      payloadSchema: GetObsSnapshotPayloadSchema,
+      resultSchema: ObsProjectionSchema,
+      isTrustedSender: trustedSender,
+      handler: () => {
+        const snapshot = obsBridge.snapshot();
+        return snapshot === undefined
+          ? { available: false, reasonCode: 'NOT_SYNCHRONIZED' }
+          : { available: true, snapshot, reasonCode: 'READY' };
+      },
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.obsReconnect,
+      payloadSchema: ReconnectObsPayloadSchema,
+      resultSchema: OperationAcceptedSchema,
+      isTrustedSender: trustedSender,
+      handler: async () => {
+        await obsBridge.reconnect();
+        return { accepted: true as const };
+      },
+    }),
+  );
+  obsBridge.start();
   const mainWindow = await createMainWindow(isDevelopment, developmentServerUrl);
   stateService.setLifecycle('ready');
 
