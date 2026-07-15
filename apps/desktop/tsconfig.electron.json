@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "emitDeclarationOnly": true,
+    "lib": ["ES2023", "DOM"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": ".types/electron",
+    "rootDir": "electron",
+    "types": ["node"]
+  },
+  "include": ["electron/**/*.ts"],
+  "references": [{ "path": "../../packages/contracts" }, { "path": "../../packages/domain" }]
+}

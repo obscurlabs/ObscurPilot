@@ -1,0 +1,22 @@
+node_modules/
+dist/
+.types/
+coverage/
+playwright-report/
+test-results/
+artifacts/
+release/
+*.log
+
+# Local secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

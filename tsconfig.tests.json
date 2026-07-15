@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "emitDeclarationOnly": true,
+    "lib": ["ES2023", "DOM"],
+    "outDir": ".types/tests",
+    "rootDir": ".",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "tests/**/*.ts",
+    "apps/desktop/electron/environment.ts",
+    "apps/desktop/electron/ipc-router.ts",
+    "apps/desktop/electron/lifecycle.ts",
+    "apps/desktop/electron/preload-api.ts",
+    "apps/desktop/electron/security.ts",
+    "apps/desktop/src/lib/state-projection.ts"
+  ],
+  "references": [{ "path": "./packages/contracts" }, { "path": "./packages/domain" }]
+}

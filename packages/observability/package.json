@@ -1,0 +1,12 @@
+{
+  "name": "@obscurpilot/observability",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./event": {
+      "types": "./dist/event.d.ts",
+      "import": "./dist/event.js"
+    }
+  }
+}

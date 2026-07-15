@@ -1,0 +1,11 @@
+appId: com.obscurpilot.desktop
+productName: ObscurPilot
+asar: true
+directories:
+  output: ../../artifacts
+files:
+  - dist-electron/**/*
+  - dist-renderer/**/*
+  - package.json
+win:
+  executableName: ObscurPilot

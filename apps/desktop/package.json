@@ -1,0 +1,36 @@
+{
+  "name": "@obscurpilot/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ObscurPilot secure desktop runtime",
+  "author": "ObscurPilot Contributors",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "dev": "npm run build:electron && concurrently -k -s first \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "build": "npm run clean && npm run build:electron && vite build",
+    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist-electron/main.cjs --external:electron && esbuild electron/preload.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist-electron/preload.cjs --external:electron",
+    "clean": "rimraf dist-electron dist-renderer .types",
+    "package:dir": "electron-builder --dir"
+  },
+  "dependencies": {
+    "@obscurpilot/contracts": "0.1.0",
+    "@obscurpilot/domain": "0.1.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "dotenv": "17.4.2",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "tailwind-merge": "3.6.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.2",
+    "@vitejs/plugin-react": "6.0.3",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.1",
+    "tailwindcss": "4.3.2",
+    "vite": "8.1.4"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@obscurpilot/adapters-twitch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./boundary": {
+      "types": "./dist/boundary.d.ts",
+      "import": "./dist/boundary.js"
+    }
+  }
+}

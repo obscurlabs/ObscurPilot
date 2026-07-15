@@ -1,0 +1,63 @@
+{
+  "name": "@obscurpilot/domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./activity": {
+      "types": "./dist/activity.d.ts",
+      "import": "./dist/activity.js"
+    },
+    "./circuit-breaker": {
+      "types": "./dist/circuit-breaker.d.ts",
+      "import": "./dist/circuit-breaker.js"
+    },
+    "./command-ledger": {
+      "types": "./dist/command-ledger.d.ts",
+      "import": "./dist/command-ledger.js"
+    },
+    "./connection-fsm": {
+      "types": "./dist/connection-fsm.d.ts",
+      "import": "./dist/connection-fsm.js"
+    },
+    "./connection-supervisor": {
+      "types": "./dist/connection-supervisor.d.ts",
+      "import": "./dist/connection-supervisor.js"
+    },
+    "./durable-outbox": {
+      "types": "./dist/durable-outbox.d.ts",
+      "import": "./dist/durable-outbox.js"
+    },
+    "./event-bus": {
+      "types": "./dist/event-bus.d.ts",
+      "import": "./dist/event-bus.js"
+    },
+    "./loop-controller": {
+      "types": "./dist/loop-controller.d.ts",
+      "import": "./dist/loop-controller.js"
+    },
+    "./platform-adapter": {
+      "types": "./dist/platform-adapter.d.ts",
+      "import": "./dist/platform-adapter.js"
+    },
+    "./policy": {
+      "types": "./dist/policy.d.ts",
+      "import": "./dist/policy.js"
+    },
+    "./retry": {
+      "types": "./dist/retry.d.ts",
+      "import": "./dist/retry.js"
+    },
+    "./snapshot-store": {
+      "types": "./dist/snapshot-store.d.ts",
+      "import": "./dist/snapshot-store.js"
+    },
+    "./tool-registry": {
+      "types": "./dist/tool-registry.d.ts",
+      "import": "./dist/tool-registry.js"
+    }
+  },
+  "dependencies": {
+    "@obscurpilot/contracts": "0.1.0"
+  }
+}

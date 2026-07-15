@@ -1,0 +1,31 @@
+{
+  "name": "@obscurpilot/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./bootstrap": {
+      "types": "./dist/bootstrap.d.ts",
+      "import": "./dist/bootstrap.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "import": "./dist/errors.js"
+    },
+    "./ipc": {
+      "types": "./dist/ipc.d.ts",
+      "import": "./dist/ipc.js"
+    },
+    "./renderer-api": {
+      "types": "./dist/renderer-api.d.ts",
+      "import": "./dist/renderer-api.js"
+    },
+    "./state": {
+      "types": "./dist/state.d.ts",
+      "import": "./dist/state.js"
+    }
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  }
+}

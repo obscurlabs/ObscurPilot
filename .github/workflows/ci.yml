@@ -1,0 +1,62 @@
+name: ObscurPilot quality gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install exact dependency graph
+        run: npm ci
+
+      - name: Static verification
+        run: npm run verify:static
+
+      - name: Unit and contract tests
+        run: npm test
+
+      - name: Stage test projects
+        run: |
+          npm run test:integration
+          npm run test:chaos
+          npm run test:performance
+
+      - name: Production build
+        run: npm run build
+
+      - name: Production dependency audit
+        run: npm run audit:dependencies
+
+      - name: Production license audit
+        run: npm run audit:licenses
+
+      - name: Create unsigned unpacked artifact
+        run: npm run package:dir
+
+      - name: Electron source and packaged boundary smoke tests
+        run: npm run test:e2e
+
+      - name: Upload unpacked desktop
+        uses: actions/upload-artifact@v4
+        with:
+          name: obscurpilot-windows-unpacked
+          path: artifacts/win-unpacked
+          if-no-files-found: error
+          retention-days: 7
