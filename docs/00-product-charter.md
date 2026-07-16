@@ -13,6 +13,8 @@ The platform contains only reusable infrastructure:
 - policy-controlled local and remote command execution;
 - OBS connectivity and state mirroring;
 - Twitch authentication, Helix operations, and EventSub ingestion;
+- profile-driven OBS/Twitch live-session preparation, confirmation, execution, verification, stop, and rollback;
+- bounded Twitch chat ingestion/analysis plus explicit creator-controlled delete, timeout, ban/unban, and personal block/unblock operations;
 - Supabase identity, persistence, synchronization, and audit data;
 - desktop control surfaces, connection health, activity history, and feedback;
 - packaging, diagnostics, release, rollback, and support tooling.
@@ -31,6 +33,8 @@ Specific creative routines, consumer scripts, and hard-coded production workflow
 | Renderer long-task budget                              | no task > 50 ms during steady state |
 | Crash-free desktop sessions                            |                            >= 99.5% |
 | Duplicate execution under retry/reconnect testing      |                                   0 |
+| Moderation action applied to the wrong provider user   |                                   0 |
+| Permanent ban/personal block without explicit approval |                                   0 |
 | Secret exposure in renderer/log fixtures               |                                   0 |
 
 Network-dependent Groq and Twitch end-to-end latency is measured separately from local overhead.

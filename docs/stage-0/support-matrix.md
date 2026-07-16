@@ -26,7 +26,7 @@ Groq currently documents the selected STT model, local tool use for both reasoni
 | Minimum               | 4 physical cores, 8 GB RAM, microphone | Correctness and security pass; latency reported but not release-blocking |
 | Performance reference | 6+ modern cores, 16 GB RAM, SSD        | All latency and 8-hour soak budgets pass                                 |
 
-Exact reference machines and audio devices become release metadata in Stage 12. GPU acceleration is not required.
+Exact reference machines and audio devices become release metadata in Stage 13. GPU acceleration is not required.
 
 ## Compatibility rules
 

@@ -34,7 +34,7 @@ This checksum identifies the artifact at the Stage 1 gate. The working artifact 
 - Path: artifacts/win-unpacked/ObscurPilot.exe
 - Size: 225,485,824 bytes
 - SHA-256: 46726A9410531B9BAB1F5C3DE11E3F2BEB04A17132B681BE2014B72362556C0E
-- Purpose: local and CI smoke testing only; signing, branded icons, installers, and release distribution remain Stage 13 responsibilities.
+- Purpose: local and CI smoke testing only; signing, branded icons, installers, and release distribution remain Stage 14 responsibilities.
 
 ## Security boundary accepted in this stage
 

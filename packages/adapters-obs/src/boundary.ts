@@ -1,7 +1,9 @@
 import type { ConnectionProjection } from '@obscurpilot/contracts/state';
 import { ObsSnapshotSchema, type ObsSnapshot } from '@obscurpilot/contracts/obs';
 import type { ToolDefinition } from '@obscurpilot/domain/tool-registry';
+import { authorizeTool, type ToolGrant, type ToolRisk } from '@obscurpilot/domain/policy';
 import OBSWebSocket, { EventSubscription, OBSWebSocketError } from 'obs-websocket-js';
+import { z } from 'zod';
 
 export const OBS_ADAPTER_PACKAGE = '@obscurpilot/adapters-obs' as const;
 
@@ -419,6 +421,9 @@ export function createObsSnapshotTool(
     name: 'obs.read_snapshot',
     version: 1,
     risk: 'observe',
+    modelName: 'obs_read_snapshot_v1',
+    description: 'Read the current synchronized OBS production snapshot.',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
     parse: (input) => {
       if (typeof input !== 'object' || input === null || Object.keys(input).length !== 0) {
         throw new Error('obs.read_snapshot accepts an empty object');
@@ -434,6 +439,164 @@ export function createObsSnapshotTool(
       return snapshot;
     },
   };
+}
+
+export interface ObsToolAuthorizationSource {
+  readonly getGrants: () => readonly ToolGrant[];
+  readonly now?: () => number;
+}
+
+export function createObsProductionTools(
+  bridge: ObsBridge,
+  authorization: ObsToolAuthorizationSource,
+): ReadonlyArray<ToolDefinition<unknown, unknown>> {
+  const now = authorization.now ?? Date.now;
+  const authorize = (toolName: string, requiredScope: string, risk: ToolRisk, confirmed: boolean) =>
+    authorizeTool(authorization.getGrants(), {
+      now: now(),
+      toolName,
+      requiredScope,
+      risk,
+      confirmed,
+    });
+  const commandTool = <Input>(options: {
+    readonly name: string;
+    readonly modelName: string;
+    readonly description: string;
+    readonly scope: string;
+    readonly risk: ToolRisk;
+    readonly parameters: Readonly<Record<string, unknown>>;
+    readonly parse: (input: unknown) => Input;
+    readonly toCommand: (input: Input) => ObsCommandRequest;
+  }): ToolDefinition<Input, { readonly accepted: true }> => ({
+    name: options.name,
+    version: 1,
+    risk: options.risk,
+    modelName: options.modelName,
+    description: options.description,
+    parameters: options.parameters,
+    parse: options.parse,
+    authorize: async (context) =>
+      authorize(options.name, options.scope, options.risk, context.confirmed === true),
+    execute: async (context, input) => {
+      if (
+        context.expectedObsSnapshotVersion === undefined ||
+        context.expectedObsGeneration === undefined
+      ) {
+        throw new ObsBridgeError('PRECONDITION_FAILED', 'OBS context precondition is absent');
+      }
+      await bridge.execute(
+        {
+          commandId: context.commandId ?? context.correlationId,
+          expectedSnapshotVersion: context.expectedObsSnapshotVersion,
+          expectedGeneration: context.expectedObsGeneration,
+          command: options.toCommand(input),
+        },
+        context.signal,
+      );
+      return { accepted: true };
+    },
+  });
+
+  const emptySchema = z.object({}).strict();
+  const readTool: ToolDefinition<Record<string, never>, ObsSnapshot> = {
+    ...createObsSnapshotTool(bridge),
+    authorize: async (context) =>
+      authorize('obs.read_snapshot', 'obs:read', 'observe', context.confirmed === true),
+  };
+  return [
+    readTool,
+    commandTool({
+      name: 'obs.set_program_scene',
+      modelName: 'obs_set_program_scene_v1',
+      description: 'Change the current OBS program scene to an exact synchronized scene name.',
+      scope: 'obs:scene:write',
+      risk: 'reversible',
+      parameters: {
+        type: 'object',
+        properties: { sceneName: { type: 'string', minLength: 1, maxLength: 512 } },
+        required: ['sceneName'],
+        additionalProperties: false,
+      },
+      parse: (input) =>
+        z
+          .object({ sceneName: z.string().min(1).max(512) })
+          .strict()
+          .parse(input),
+      toCommand: (input) => ({
+        requestType: 'SetCurrentProgramScene',
+        requestData: { sceneName: input.sceneName },
+      }),
+    }),
+    commandTool({
+      name: 'obs.set_input_mute',
+      modelName: 'obs_set_input_mute_v1',
+      description: 'Set one exact synchronized OBS input to muted or unmuted.',
+      scope: 'obs:audio:write',
+      risk: 'reversible',
+      parameters: {
+        type: 'object',
+        properties: {
+          inputName: { type: 'string', minLength: 1, maxLength: 512 },
+          inputMuted: { type: 'boolean' },
+        },
+        required: ['inputName', 'inputMuted'],
+        additionalProperties: false,
+      },
+      parse: (input) =>
+        z
+          .object({ inputName: z.string().min(1).max(512), inputMuted: z.boolean() })
+          .strict()
+          .parse(input),
+      toCommand: (input) => ({
+        requestType: 'SetInputMute',
+        requestData: { inputName: input.inputName, inputMuted: input.inputMuted },
+      }),
+    }),
+    ...(
+      [
+        [
+          'obs.start_stream',
+          'obs_start_stream_v1',
+          'Start OBS streaming output.',
+          'obs:stream:write',
+          'StartStream',
+        ],
+        [
+          'obs.stop_stream',
+          'obs_stop_stream_v1',
+          'Stop OBS streaming output.',
+          'obs:stream:write',
+          'StopStream',
+        ],
+        [
+          'obs.start_record',
+          'obs_start_record_v1',
+          'Start OBS recording output.',
+          'obs:record:write',
+          'StartRecord',
+        ],
+        [
+          'obs.stop_record',
+          'obs_stop_record_v1',
+          'Stop OBS recording output.',
+          'obs:record:write',
+          'StopRecord',
+        ],
+      ] as const
+    ).map(([name, modelName, description, scope, requestType]) =>
+      commandTool({
+        name,
+        modelName,
+        description,
+        scope,
+        risk: 'confirm',
+        parameters: { type: 'object', properties: {}, additionalProperties: false },
+        parse: (input) => emptySchema.parse(input),
+        toCommand: () => ({ requestType }),
+      }),
+    ),
+  ];
 }
 
 function isAuthError(error: unknown): boolean {

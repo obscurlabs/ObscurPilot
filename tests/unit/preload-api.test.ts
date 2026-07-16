@@ -88,8 +88,22 @@ describe('preload capability API', () => {
       'listAudioDevices',
       'selectAudioDevice',
       'onPttChanged',
+      'getAgentInteraction',
+      'decideAgentConfirmation',
+      'onAgentInteractionChanged',
       'getObsSnapshot',
       'reconnectObs',
+      'getCloudAuth',
+      'signInCloud',
+      'signUpCloud',
+      'resendCloudConfirmation',
+      'signOutCloud',
+      'requestCloudAccountDeletion',
+      'getTwitchProjection',
+      'connectTwitch',
+      'disconnectTwitch',
+      'reconnectTwitch',
+      'onTwitchActivity',
     ]);
     await expect(api.getBootstrap()).resolves.toMatchObject({ app: { name: 'ObscurPilot' } });
     await expect(api.getSnapshot()).resolves.toMatchObject({ snapshotVersion: 0 });
@@ -106,5 +120,15 @@ describe('preload capability API', () => {
       unsubscribe();
       expect(ipc.listenerCount(IPC_CHANNELS.stateChanged)).toBe(0);
     }
+  });
+
+  it('does not leak Twitch activity listeners', () => {
+    const ipc = new FakeRendererIpc();
+    const api = createRendererApi(ipc);
+    const unsubscribe = api.onTwitchActivity(() => undefined);
+    expect(ipc.listenerCount(IPC_CHANNELS.twitchActivity)).toBe(1);
+    unsubscribe();
+    unsubscribe();
+    expect(ipc.listenerCount(IPC_CHANNELS.twitchActivity)).toBe(0);
   });
 });

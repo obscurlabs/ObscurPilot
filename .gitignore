@@ -6,6 +6,7 @@ playwright-report/
 test-results/
 artifacts/
 release/
+supabase/.temp/
 *.log
 
 # Local secrets and machine-specific configuration

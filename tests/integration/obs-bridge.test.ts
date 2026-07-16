@@ -1,5 +1,11 @@
-import { ObsBridge, ObsBridgeError, type ObsTransport } from '@obscurpilot/adapters-obs/boundary';
+import {
+  createObsProductionTools,
+  ObsBridge,
+  ObsBridgeError,
+  type ObsTransport,
+} from '@obscurpilot/adapters-obs/boundary';
 import type { ConnectionProjection } from '@obscurpilot/contracts/state';
+import { ToolRegistry } from '@obscurpilot/domain/tool-registry';
 import { describe, expect, it, vi } from 'vitest';
 
 const ID = '20000000-0000-4000-8000-000000000001';
@@ -192,6 +198,61 @@ describe('OBS authoritative bridge', () => {
     const oldGeneration = snapshot.generation;
     fake.disconnect();
     await vi.waitFor(() => expect(bridge.snapshot()?.generation).toBeGreaterThan(oldGeneration));
+    await bridge.dispose();
+  });
+
+  it('enforces persisted grants, confirmation, and captured snapshot preconditions for tools', async () => {
+    const fake = createTransport();
+    const bridge = new ObsBridge({
+      url: 'ws://127.0.0.1:4455',
+      transport: fake.transport,
+      onConnection: () => undefined,
+      id: () => ID,
+    });
+    bridge.start();
+    await vi.waitFor(() => expect(bridge.snapshot()).toBeDefined());
+    const registry = new ToolRegistry();
+    const grants = [
+      {
+        toolName: 'obs.set_program_scene',
+        scopes: new Set(['obs:scene:write']),
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      },
+      {
+        toolName: 'obs.start_stream',
+        scopes: new Set(['obs:stream:write']),
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      },
+    ];
+    for (const tool of createObsProductionTools(bridge, { getGrants: () => grants })) {
+      registry.register(tool);
+    }
+    const snapshot = bridge.snapshot()!;
+    const context = {
+      correlationId: ID,
+      commandId: 'scene-call',
+      confirmed: false,
+      signal: new AbortController().signal,
+      expectedObsSnapshotVersion: snapshot.snapshotVersion,
+      expectedObsGeneration: snapshot.generation,
+    };
+    await registry.invoke('obs.set_program_scene', 1, { sceneName: 'Program' }, context);
+    expect(fake.calls.filter((call) => call === 'SetCurrentProgramScene')).toHaveLength(1);
+    await expect(
+      registry.invoke('obs.start_stream', 1, {}, { ...context, commandId: 'stream-denied' }),
+    ).rejects.toThrow('confirmation');
+    await expect(
+      registry.invoke(
+        'obs.set_program_scene',
+        1,
+        { sceneName: 'Program' },
+        {
+          ...context,
+          commandId: 'scene-stale',
+          expectedObsSnapshotVersion: 999,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
     await bridge.dispose();
   });
 });

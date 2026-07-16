@@ -10,6 +10,8 @@ ObscurPilot does not perform online reinforcement learning against model weights
 
 A preference record contains `id`, `user_id`, `key`, typed `value`, `source`, `confidence`, `evidence_count`, `created_at`, `last_confirmed_at`, `expires_at`, and `revision`. Allowed keys come from a registry. Preferences may affect presentation, model routing, and default non-security behavior. They cannot create permissions, change tool risk, skip confirmations, expand scopes, or override resource preconditions.
 
+Chat and moderation outcomes may improve classification thresholds, language/context preferences, summary grouping, and which items are surfaced for review. They may not automatically add a protected user to a sanction target, turn a suggestion into execution, expand a timeout into a permanent ban, conflate a channel ban with a personal block, or learn to suppress confirmation. False-positive moderation carries a release-blocking weight higher than missed low-severity classification.
+
 ## 2. Candidate promotion gate
 
 ```text
@@ -18,14 +20,14 @@ feedback -> redact/validate -> evaluation dataset -> candidate version
          -> reviewed promotion -> canary -> full rollout / rollback
 ```
 
-Candidate reports include task success, false execution, clarification rate, latency, token use, policy rejection, and regressions by scenario. Any safety regression blocks promotion regardless of average quality gain. Every active prompt/policy/model routing configuration has an immutable version and immediate rollback target.
+Candidate reports include task success, false execution, clarification rate, latency, token use, policy rejection, moderation precision/recall, target-identity accuracy, sanction-severity confusion, and regressions by scenario. Any safety regression blocks promotion regardless of average quality gain. Every active prompt/policy/model routing configuration has an immutable version and immediate rollback target.
 
 ## 3. Test pyramid
 
 - **Unit:** schemas, reducers, FSM transitions, retry math, policy decisions, dedupe, redaction.
 - **Contract:** IPC envelopes, tool JSON schemas, SDK adapter fixtures, SQL repository behavior.
-- **Integration:** Electron main/preload, real OBS, local Supabase, Twitch test account/mock protocol, Groq recorded/mock error cases.
-- **E2E:** packaged app from push-to-talk through visible/audible result and audited completion.
+- **Integration:** Electron main/preload, real OBS, local Supabase, Twitch test account/mock protocol, chat/moderation fixtures, Groq recorded/mock error cases.
+- **E2E:** packaged app from push-to-talk through preflight/confirmation, visible/audible result, provider verification, moderation review, and audited completion.
 - **Chaos:** socket termination, latency, packet loss, 429/5xx, token expiry, process crash, device removal, clock skew.
 - **Performance:** cold start, event burst, timeline render, voice dispatch, memory/handle soak.
 - **Security:** RLS tenant matrix, IPC fuzzing, bundle/secret scans, dependency review, OAuth abuse cases.
@@ -44,6 +46,7 @@ Maintain tested runbooks for:
 
 - OBS authentication/version mismatch and restart loops;
 - Twitch token revocation, subscription failure, and exhausted rate limits;
+- Twitch chat outage/flood, mistaken-target recovery, moderation reversal where supported, uncertain stream start, and emergency stop;
 - Groq throttling/outage and model configuration rollback;
 - Supabase outage, migration failure, RLS incident, restore, and quota exhaustion;
 - corrupted local cache/outbox recovery;

@@ -14556,8 +14556,22 @@ var IPC_CHANNELS = {
   audioListDevices: "audio:list-devices:v1",
   audioSelectDevice: "audio:select-device:v1",
   pttChanged: "audio:ptt-changed:v1",
+  agentGetProjection: "agent:get-projection:v1",
+  agentConfirmationDecision: "agent:confirmation-decision:v1",
+  agentInteractionChanged: "agent:interaction-changed:v1",
   obsGetSnapshot: "obs:get-snapshot:v1",
-  obsReconnect: "obs:reconnect:v1"
+  obsReconnect: "obs:reconnect:v1",
+  cloudGetAuth: "cloud:get-auth:v1",
+  cloudSignIn: "cloud:sign-in:v1",
+  cloudSignUp: "cloud:sign-up:v1",
+  cloudResendConfirmation: "cloud:resend-confirmation:v1",
+  cloudSignOut: "cloud:sign-out:v1",
+  cloudRequestDeletion: "cloud:request-deletion:v1",
+  twitchGetProjection: "twitch:get-projection:v1",
+  twitchConnect: "twitch:connect:v1",
+  twitchDisconnect: "twitch:disconnect:v1",
+  twitchReconnect: "twitch:reconnect:v1",
+  twitchActivity: "twitch:activity:v1"
 };
 var RequestMetadataSchema = external_exports.object({
   protocolVersion: external_exports.literal(IPC_PROTOCOL_VERSION),
@@ -14727,6 +14741,125 @@ var ObsProjectionSchema = external_exports.object({
 var GetObsSnapshotPayloadSchema = external_exports.object({}).strict();
 var ReconnectObsPayloadSchema = external_exports.object({}).strict();
 
+// ../../packages/contracts/dist/cloud.js
+var CloudAuthPhaseSchema = external_exports.enum([
+  "not_configured",
+  "restoring",
+  "signed_out",
+  "authenticated",
+  "degraded"
+]);
+var CloudAuthProjectionSchema = external_exports.object({
+  configured: external_exports.boolean(),
+  phase: CloudAuthPhaseSchema,
+  userId: external_exports.string().uuid().optional(),
+  expiresAt: external_exports.string().datetime({ offset: true }).optional(),
+  reasonCode: external_exports.string().min(1).max(96)
+}).strict();
+var CloudCredentialPayloadSchema = external_exports.object({
+  email: external_exports.string().trim().toLowerCase().email().max(320),
+  password: external_exports.string().min(8).max(256)
+}).strict();
+var CloudConfirmationPayloadSchema = external_exports.object({
+  email: external_exports.string().trim().toLowerCase().email().max(320)
+}).strict();
+var CloudSignOutPayloadSchema = external_exports.object({ scope: external_exports.literal("local") }).strict();
+var CloudGetAuthPayloadSchema = external_exports.object({}).strict();
+var CloudGetAuthRequestSchema = createRequestEnvelopeSchema(CloudGetAuthPayloadSchema);
+var CloudSignInRequestSchema = createRequestEnvelopeSchema(CloudCredentialPayloadSchema);
+var CloudSignUpRequestSchema = createRequestEnvelopeSchema(CloudCredentialPayloadSchema);
+var CloudResendConfirmationRequestSchema = createRequestEnvelopeSchema(CloudConfirmationPayloadSchema);
+var CloudSignOutRequestSchema = createRequestEnvelopeSchema(CloudSignOutPayloadSchema);
+var CreatorProfileSchema = external_exports.object({
+  id: external_exports.string().uuid(),
+  userId: external_exports.string().uuid(),
+  displayName: external_exports.string().min(1).max(80),
+  locale: external_exports.string().min(2).max(35),
+  timeZone: external_exports.string().min(1).max(64),
+  revision: external_exports.number().int().positive(),
+  updatedAt: external_exports.string().datetime({ offset: true })
+}).strict();
+var DeviceRegistrationSchema = external_exports.object({
+  id: external_exports.string().uuid(),
+  publicId: external_exports.string().uuid(),
+  revision: external_exports.number().int().positive(),
+  lastSeenAt: external_exports.string().datetime({ offset: true })
+}).strict();
+var OperationReceiptSchema = external_exports.object({
+  mutationId: external_exports.string().uuid(),
+  status: external_exports.enum(["delivered", "queued"])
+}).strict();
+
+// ../../packages/contracts/dist/twitch.js
+var TwitchAccountSchema = external_exports.object({
+  providerUserId: external_exports.string().min(1).max(128),
+  displayName: external_exports.string().min(1).max(80),
+  scopes: external_exports.array(external_exports.string().min(1).max(128)).max(64),
+  tokenExpiresAt: external_exports.string().datetime({ offset: true }).optional()
+}).strict();
+var TwitchProjectionSchema = external_exports.object({
+  configured: external_exports.boolean(),
+  phase: external_exports.enum([
+    "not_configured",
+    "signed_out",
+    "authorizing",
+    "connecting",
+    "connected",
+    "backoff",
+    "degraded"
+  ]),
+  account: TwitchAccountSchema.optional(),
+  reasonCode: external_exports.string().min(1).max(96)
+}).strict();
+var TwitchActivitySchema = external_exports.object({
+  id: external_exports.string().min(1).max(256),
+  type: external_exports.enum(["stream.online", "stream.offline", "channel.update"]),
+  occurredAt: external_exports.string().datetime({ offset: true }),
+  summary: external_exports.string().min(1).max(500),
+  metadata: external_exports.record(external_exports.string(), external_exports.union([external_exports.string(), external_exports.number(), external_exports.boolean()]))
+}).strict();
+var TwitchEmptyPayloadSchema = external_exports.object({}).strict();
+var TwitchOperationAcceptedSchema = external_exports.object({ accepted: external_exports.literal(true) }).strict();
+var TwitchActivityEventSchema = createEventEnvelopeSchema(TwitchActivitySchema);
+
+// ../../packages/contracts/dist/agent.js
+var GroqSttModelSchema = external_exports.literal("whisper-large-v3-turbo");
+var GroqReasoningModelSchema = external_exports.enum(["openai/gpt-oss-120b", "qwen/qwen3.6-27b"]);
+var AgentInteractionPhaseSchema = external_exports.enum([
+  "idle",
+  "transcribing",
+  "reasoning",
+  "tool_active",
+  "awaiting_confirmation",
+  "completed",
+  "error"
+]);
+var ToolIdentitySchema = external_exports.object({
+  name: external_exports.string().regex(/^[a-z][a-z0-9_.-]{2,63}$/u),
+  version: external_exports.number().int().positive()
+}).strict();
+var AgentConfirmationSchema = external_exports.object({
+  confirmationId: external_exports.string().uuid(),
+  tool: ToolIdentitySchema,
+  expiresAt: external_exports.string().datetime({ offset: true }),
+  summaryCode: external_exports.string().min(1).max(96)
+}).strict();
+var AgentInteractionProjectionSchema = external_exports.object({
+  phase: AgentInteractionPhaseSchema,
+  reasonCode: external_exports.string().min(1).max(96),
+  elapsedMs: external_exports.number().int().nonnegative(),
+  correlationId: external_exports.string().uuid().optional(),
+  model: GroqReasoningModelSchema.optional(),
+  tool: ToolIdentitySchema.optional(),
+  confirmation: AgentConfirmationSchema.optional()
+}).strict();
+var AgentEmptyPayloadSchema = external_exports.object({}).strict();
+var AgentConfirmationDecisionPayloadSchema = external_exports.object({
+  confirmationId: external_exports.string().uuid(),
+  decision: external_exports.enum(["approve", "deny"])
+}).strict();
+var AgentInteractionChangedEventSchema = createEventEnvelopeSchema(AgentInteractionProjectionSchema);
+
 // electron/preload-api.ts
 var RendererIpcError = class extends Error {
   constructor(code, message, retryable, correlationId) {
@@ -14804,6 +14937,31 @@ function createRendererApi(ipc) {
         ipc.removeListener(IPC_CHANNELS.pttChanged, wrapped);
       };
     },
+    getAgentInteraction: () => invoke(
+      ipc,
+      IPC_CHANNELS.agentGetProjection,
+      AgentEmptyPayloadSchema.parse({}),
+      AgentInteractionProjectionSchema
+    ),
+    decideAgentConfirmation: (payload) => invoke(
+      ipc,
+      IPC_CHANNELS.agentConfirmationDecision,
+      AgentConfirmationDecisionPayloadSchema.parse(payload),
+      AgentInteractionProjectionSchema
+    ),
+    onAgentInteractionChanged: (listener) => {
+      let subscribed = true;
+      const wrapped = (_event, rawEnvelope) => {
+        const envelope = AgentInteractionChangedEventSchema.parse(rawEnvelope);
+        listener(envelope.payload);
+      };
+      ipc.on(IPC_CHANNELS.agentInteractionChanged, wrapped);
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        ipc.removeListener(IPC_CHANNELS.agentInteractionChanged, wrapped);
+      };
+    },
     getObsSnapshot: () => invoke(
       ipc,
       IPC_CHANNELS.obsGetSnapshot,
@@ -14815,7 +14973,80 @@ function createRendererApi(ipc) {
       IPC_CHANNELS.obsReconnect,
       ReconnectObsPayloadSchema.parse({}),
       OperationAcceptedSchema
-    )
+    ),
+    getCloudAuth: () => invoke(
+      ipc,
+      IPC_CHANNELS.cloudGetAuth,
+      CloudGetAuthPayloadSchema.parse({}),
+      CloudAuthProjectionSchema
+    ),
+    signInCloud: (credentials) => invoke(
+      ipc,
+      IPC_CHANNELS.cloudSignIn,
+      CloudCredentialPayloadSchema.parse(credentials),
+      CloudAuthProjectionSchema
+    ),
+    signUpCloud: (credentials) => invoke(
+      ipc,
+      IPC_CHANNELS.cloudSignUp,
+      CloudCredentialPayloadSchema.parse(credentials),
+      CloudAuthProjectionSchema
+    ),
+    resendCloudConfirmation: (payload) => invoke(
+      ipc,
+      IPC_CHANNELS.cloudResendConfirmation,
+      CloudConfirmationPayloadSchema.parse(payload),
+      OperationAcceptedSchema
+    ),
+    signOutCloud: () => invoke(
+      ipc,
+      IPC_CHANNELS.cloudSignOut,
+      CloudSignOutPayloadSchema.parse({ scope: "local" }),
+      CloudAuthProjectionSchema
+    ),
+    requestCloudAccountDeletion: () => invoke(
+      ipc,
+      IPC_CHANNELS.cloudRequestDeletion,
+      CloudGetAuthPayloadSchema.parse({}),
+      OperationAcceptedSchema
+    ),
+    getTwitchProjection: () => invoke(
+      ipc,
+      IPC_CHANNELS.twitchGetProjection,
+      TwitchEmptyPayloadSchema.parse({}),
+      TwitchProjectionSchema
+    ),
+    connectTwitch: () => invoke(
+      ipc,
+      IPC_CHANNELS.twitchConnect,
+      TwitchEmptyPayloadSchema.parse({}),
+      TwitchOperationAcceptedSchema
+    ),
+    disconnectTwitch: () => invoke(
+      ipc,
+      IPC_CHANNELS.twitchDisconnect,
+      TwitchEmptyPayloadSchema.parse({}),
+      TwitchProjectionSchema
+    ),
+    reconnectTwitch: () => invoke(
+      ipc,
+      IPC_CHANNELS.twitchReconnect,
+      TwitchEmptyPayloadSchema.parse({}),
+      TwitchOperationAcceptedSchema
+    ),
+    onTwitchActivity: (listener) => {
+      let subscribed = true;
+      const wrapped = (_event, rawEnvelope) => {
+        const envelope = TwitchActivityEventSchema.parse(rawEnvelope);
+        listener(envelope.payload);
+      };
+      ipc.on(IPC_CHANNELS.twitchActivity, wrapped);
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        ipc.removeListener(IPC_CHANNELS.twitchActivity, wrapped);
+      };
+    }
   });
 }
 async function invoke(ipc, channel, payload, outputSchema) {

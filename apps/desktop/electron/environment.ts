@@ -29,6 +29,10 @@ const EnvironmentSchema = z.object({
     emptyToUndefined,
     z.enum(['openai/gpt-oss-120b', 'qwen/qwen3.6-27b']).default('openai/gpt-oss-120b'),
   ),
+  GROQ_REASONING_FALLBACK_MODEL: z.preprocess(
+    emptyToUndefined,
+    z.enum(['openai/gpt-oss-120b', 'qwen/qwen3.6-27b']).optional(),
+  ),
   SUPABASE_URL: optionalUrl,
   SUPABASE_ANON_KEY: optionalSecret,
   TWITCH_CLIENT_ID: optionalSecret,

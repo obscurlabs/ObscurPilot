@@ -6,4 +6,5 @@ export interface OperationalEvent {
   readonly correlationId?: string;
   readonly durationMs?: number;
   readonly outcome?: 'success' | 'failure' | 'cancelled';
+  readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }

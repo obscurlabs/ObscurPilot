@@ -12,6 +12,7 @@
   "dependencies": {
     "@obscurpilot/contracts": "0.1.0",
     "@obscurpilot/domain": "0.1.0",
-    "obs-websocket-js": "5.0.7"
+    "obs-websocket-js": "5.0.7",
+    "zod": "4.4.3"
   }
 }

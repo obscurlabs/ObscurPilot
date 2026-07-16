@@ -27,7 +27,7 @@ The runtime contract carries state, reason code, correlation identity, and bound
 - At most two elements animate concurrently. Micro-interactions use 150–300 ms ease-out transitions; complex state changes stay below 400 ms.
 - The reduced-motion media preference disables loops and energy scaling while retaining state text, badges, and focus indication.
 - Every color state also has a text label. Normal text targets WCAG 2.2 AA contrast and every interactive control has a visible keyboard focus ring.
-- Hidden/background windows stop nonessential animation. Event streams are batched; long timelines will be virtualized in Stage 10.
+- Hidden/background windows stop nonessential animation. Event streams are batched and long timelines are virtualized within a 10,000-event bound.
 
 ## Stage integration
 
@@ -36,7 +36,8 @@ The runtime contract carries state, reason code, correlation identity, and bound
 - Stage 8 maps STT dispatch and completion to transcribing.
 - Stage 9 maps bounded model and tool-loop phases to reasoning, tool-active, and confirmation.
 - Stage 10 composes the production control board, activity virtualization, settings, recovery actions, and speechSynthesis speaking feedback.
-- Stage 11 adds explicit feedback controls; learning never changes visual or tool policy without a versioned, evaluated release.
+- Stage 11 adds the live-session preflight, one final Go-Live confirmation, authoritative OBS/Twitch status, stop/abort recovery, virtualized chat analysis, and a moderation review queue that visibly distinguishes delete, timeout, channel ban, and personal block.
+- Stage 12 adds explicit feedback controls; learning never changes visual, moderation, or tool policy without a versioned, evaluated release.
 
 ## Design system direction
 

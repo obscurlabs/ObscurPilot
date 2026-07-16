@@ -5,20 +5,33 @@
     "lib": ["ES2023", "DOM"],
     "outDir": ".types/tests",
     "rootDir": ".",
+    "skipLibCheck": true,
     "types": ["node", "vitest/globals"]
   },
   "include": [
     "tests/**/*.ts",
     "apps/desktop/electron/environment.ts",
+    "apps/desktop/electron/encrypted-json-store.ts",
+    "apps/desktop/electron/cloud-bridge.ts",
+    "apps/desktop/electron/cloud-outbox.ts",
+    "apps/desktop/electron/twitch-bridge.ts",
+    "apps/desktop/electron/voice-orchestrator.ts",
     "apps/desktop/electron/ipc-router.ts",
     "apps/desktop/electron/lifecycle.ts",
     "apps/desktop/electron/preload-api.ts",
     "apps/desktop/electron/security.ts",
-    "apps/desktop/src/lib/state-projection.ts"
+    "apps/desktop/src/lib/state-projection.ts",
+    "apps/desktop/src/lib/activity-timeline.ts",
+    "apps/desktop/src/lib/recovery-guidance.ts",
+    "apps/desktop/src/lib/speech-feedback.ts",
+    "apps/desktop/src/lib/ui-preferences.ts"
   ],
   "references": [
     { "path": "./packages/contracts" },
     { "path": "./packages/domain" },
-    { "path": "./packages/adapters-obs" }
+    { "path": "./packages/adapters-obs" },
+    { "path": "./packages/adapters-supabase" },
+    { "path": "./packages/adapters-twitch" },
+    { "path": "./packages/adapters-groq" }
   ]
 }

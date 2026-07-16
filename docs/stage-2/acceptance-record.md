@@ -40,7 +40,7 @@ Scope: secure desktop shell and IPC spine. No provider connection or audio imple
 - Path: artifacts/win-unpacked/ObscurPilot.exe
 - Size: 225,485,824 bytes
 - SHA-256: 6912D1763129242AC59AEE48B1B23E67FD125AD16DDAD52ADB55E316461EA0E7
-- Status: unsigned internal smoke-test artifact; public signing and release distribution remain Stage 13.
+- Status: unsigned internal smoke-test artifact; public signing and release distribution remain Stage 14.
 
 ## Boundary decision
 

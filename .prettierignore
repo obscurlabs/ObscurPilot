@@ -6,4 +6,5 @@ coverage
 playwright-report
 test-results
 artifacts
+supabase/.temp
 package-lock.json

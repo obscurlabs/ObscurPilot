@@ -6,6 +6,7 @@ import {
   type PttProjection,
 } from '@obscurpilot/contracts/audio';
 import { AudioClipVault, PttAudioPipeline } from '@obscurpilot/domain/audio-pipeline';
+import type { EncodedAudioClip } from '@obscurpilot/domain/audio-pipeline';
 import { globalShortcut, type BrowserWindow, type IpcMain, type IpcMainEvent } from 'electron';
 import { z } from 'zod';
 import type { SecureSettingsStore } from './secure-settings.js';
@@ -64,10 +65,11 @@ export class PttAudioService {
     private readonly emitProjection: (
       event: ReturnType<typeof PttChangedEventSchema.parse>,
     ) => void,
+    private readonly onClip?: (clip: EncodedAudioClip) => Promise<void> | void,
   ) {
     this.pipeline = new PttAudioPipeline({
       onProjection: (projection) => this.publish(projection),
-      onClip: (clip) => this.vault.put(clip),
+      onClip: (clip) => this.handleClip(clip),
     });
     this.ipcMain.on(INTERNAL_EVENT, this.onInternalEvent);
   }
@@ -203,5 +205,13 @@ export class PttAudioService {
         payload: projection,
       }),
     );
+  }
+
+  private handleClip(clip: EncodedAudioClip): void {
+    this.vault.put(clip);
+    if (this.onClip === undefined) return;
+    const owned = this.vault.take(clip.clipId);
+    if (owned === undefined) return;
+    void Promise.resolve(this.onClip(owned)).finally(() => owned.bytes.fill(0));
   }
 }

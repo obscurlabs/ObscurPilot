@@ -8,23 +8,29 @@
 
 All tables have `created_at timestamptz not null default now()`. Mutable tables also have `updated_at`, `revision bigint not null default 1`, and a trigger that increments revision and updates time.
 
-| Table                 | Important columns and constraints                                                                                                                                                                                                                        |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `profiles`            | `user_id uuid primary key references auth.users on delete cascade`, `display_name`, `locale`, `timezone`, `preferences jsonb`                                                                                                                            |
-| `devices`             | `id uuid primary key`, `user_id`, `installation_public_id text unique`, `name`, `platform`, `app_version`, `last_seen_at`, `revoked_at`; unique `(user_id,id)`                                                                                           |
-| `provider_accounts`   | `id uuid`, `user_id`, `provider text check in ('twitch')`, `provider_user_id text`, `login text`, `scopes text[]`, `token_secret_ref uuid`, `status`, `token_expires_at`; unique `(provider,provider_user_id)`, unique `(user_id,provider)` where active |
-| `oauth_token_secrets` | `id uuid`, `user_id`, encrypted token material or vault reference, key version, rotation metadata; service-role access only                                                                                                                              |
-| `obs_endpoints`       | `id uuid`, `user_id`, `device_id`, `name`, `host`, `port default 4455`, `tls`, encrypted password reference, `is_default`; unique default per device                                                                                                     |
-| `control_profiles`    | `id uuid`, `user_id`, `name`, `schema_version`, `configuration jsonb`, `is_active`, `revision`; unique `(user_id,name)`                                                                                                                                  |
-| `tool_grants`         | `id uuid`, `user_id`, `tool_name`, `tool_version`, `permission`, `constraints jsonb`; unique `(user_id,tool_name,tool_version)`                                                                                                                          |
-| `event_subscriptions` | `id uuid`, `user_id`, `provider_account_id`, `subscription_type`, `condition jsonb`, `desired_status`; unique hash over account/type/condition                                                                                                           |
-| `session_records`     | `id uuid`, `user_id`, `device_id`, `started_at`, `ended_at`, `app_version`, `status`, aggregate diagnostics                                                                                                                                              |
-| `command_audit`       | `id uuid`, `user_id`, `session_id`, `command_id`, `idempotency_key`, `tool_name`, `tool_version`, redacted args/result, status, latency, correlation ID; unique `(user_id,command_id)`                                                                   |
-| `activity_events`     | `id uuid`, `user_id`, `session_id`, `source`, `source_event_id`, `event_type`, redacted payload, `occurred_at`; unique `(user_id,source,source_event_id)` when source ID exists                                                                          |
-| `feedback_records`    | `id uuid`, `user_id`, `session_id`, optional command/audit reference, rating, reason code, redacted note, policy/model/tool versions                                                                                                                     |
-| `sync_outbox`         | server-side integration work only: aggregate ID/type, event type, payload, attempts, next attempt, processed time                                                                                                                                        |
+| Table                   | Important columns and constraints                                                                                                                                                                                                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profiles`              | `user_id uuid primary key references auth.users on delete cascade`, `display_name`, `locale`, `timezone`, `preferences jsonb`                                                                                                                                                          |
+| `devices`               | `id uuid primary key`, `user_id`, `installation_public_id text unique`, `name`, `platform`, `app_version`, `last_seen_at`, `revoked_at`; unique `(user_id,id)`                                                                                                                         |
+| `provider_accounts`     | `id uuid`, `user_id`, `provider text check in ('twitch')`, `provider_user_id text`, `login text`, `scopes text[]`, `token_secret_ref uuid`, `status`, `token_expires_at`; unique `(provider,provider_user_id)`, unique `(user_id,provider)` where active                               |
+| `oauth_token_secrets`   | `id uuid`, `user_id`, encrypted token material or vault reference, key version, rotation metadata; service-role access only                                                                                                                                                            |
+| `obs_endpoints`         | `id uuid`, `user_id`, `device_id`, `name`, `host`, `port default 4455`, `tls`, encrypted password reference, `is_default`; unique default per device                                                                                                                                   |
+| `control_profiles`      | `id uuid`, `user_id`, `name`, `schema_version`, `configuration jsonb`, `is_active`, `revision`; unique `(user_id,name)`                                                                                                                                                                |
+| `live_session_profiles` | `id uuid`, `user_id`, `name`, `schema_version`, `twitch_title_template`, `twitch_game_id`, `twitch_game_query`, `tags text[]`, `obs_endpoint_id`, `obs_configuration jsonb`, `is_active`, `revision`; unique `(user_id,name)`                                                          |
+| `live_session_runs`     | `id uuid`, `user_id`, `device_id`, `profile_id`, `mode check in ('dry_run','live')`, `state`, `plan_hash`, captured profile/provider revisions, `correlation_id`, `started_at`, `live_verified_at`, `ended_at`, `failure_code`; unique `(user_id,correlation_id)`                      |
+| `tool_grants`           | `id uuid`, `user_id`, `tool_name`, `tool_version`, `permission`, `constraints jsonb`; unique `(user_id,tool_name,tool_version)`                                                                                                                                                        |
+| `event_subscriptions`   | `id uuid`, `user_id`, `provider_account_id`, `subscription_type`, `condition jsonb`, `desired_status`; unique hash over account/type/condition                                                                                                                                         |
+| `session_records`       | `id uuid`, `user_id`, `device_id`, `started_at`, `ended_at`, `app_version`, `status`, aggregate diagnostics                                                                                                                                                                            |
+| `command_audit`         | `id uuid`, `user_id`, `session_id`, `command_id`, `idempotency_key`, `tool_name`, `tool_version`, redacted args/result, status, latency, correlation ID; unique `(user_id,command_id)`                                                                                                 |
+| `activity_events`       | `id uuid`, `user_id`, `session_id`, `source`, `source_event_id`, `event_type`, redacted payload, `occurred_at`; unique `(user_id,source,source_event_id)` when source ID exists                                                                                                        |
+| `moderation_actions`    | `id uuid`, `user_id`, `session_id`, `provider_account_id`, `command_id`, `action`, `target_provider_user_id`, `target_login`, `duration_seconds`, `reason_code`, `evidence_message_id`, `status`, `provider_revision`, `confirmed_at`, `executed_at`; unique `(user_id,command_id)`    |
+| `chat_analysis_events`  | opt-in/short-retention evidence only: `id uuid`, `user_id`, `session_id`, `provider_message_id`, `provider_user_id`, `classifier_version`, `reason_codes text[]`, `confidence`, `severity`, redacted features, `expires_at`; unique `(user_id,provider_message_id,classifier_version)` |
+| `feedback_records`      | `id uuid`, `user_id`, `session_id`, optional command/audit reference, rating, reason code, redacted note, policy/model/tool versions                                                                                                                                                   |
+| `sync_outbox`           | server-side integration work only: aggregate ID/type, event type, payload, attempts, next attempt, processed time                                                                                                                                                                      |
 
 Do not store raw audio by default. Transcript retention defaults off; when enabled it has explicit purpose, retention expiry, and deletion controls. JSONB columns have versioned schemas and size limits enforced in application and database checks.
+
+Raw chat retention also defaults off. The active chat window is encrypted in main-process memory and bounded by count, bytes, and age. Persistent analysis stores provider IDs, classifier versions, reason codes, numeric scores, and redacted features—not message text—unless the creator explicitly enables a short evidence-retention policy. Expired evidence is purged server-side and included in account export/deletion behavior.
 
 ## 3. Indexing
 
@@ -35,6 +41,12 @@ create index sessions_user_started_idx on session_records(user_id, started_at de
 create index audit_user_created_idx on command_audit(user_id, created_at desc);
 create index audit_session_created_idx on command_audit(session_id, created_at desc);
 create index activity_user_occurred_idx on activity_events(user_id, occurred_at desc);
+create index live_runs_user_started_idx on live_session_runs(user_id, started_at desc);
+create index moderation_user_created_idx on moderation_actions(user_id, created_at desc);
+create index moderation_target_created_idx
+  on moderation_actions(user_id, target_provider_user_id, created_at desc);
+create index chat_analysis_expiry_idx on chat_analysis_events(expires_at)
+  where expires_at is not null;
 create index feedback_user_created_idx on feedback_records(user_id, created_at desc);
 create index outbox_pending_idx on sync_outbox(next_attempt_at)
   where processed_at is null;
@@ -61,6 +73,8 @@ with check (user_id = (select auth.uid()));
 ```
 
 Equivalent ownership policies apply to devices, profiles, grants, subscriptions, sessions, activity, feedback, and audits. Inserts require `user_id = auth.uid()` and foreign keys whose parent also belongs to the user. Sensitive token tables have no authenticated policies; only narrowly scoped server functions using service credentials may access them. The service-role key never ships in Electron.
+
+`live_session_profiles`, `live_session_runs`, `moderation_actions`, and `chat_analysis_events` use the same tenant ownership model and composite tenant foreign keys. A client may append its own pending moderation record but cannot rewrite an executed provider result. Server/provider reconciliation may transition only the documented state machine through a narrowly scoped function. No stored preference, profile, feedback, or analysis row can grant a Twitch scope or create a `tool_grants` row.
 
 Use security-definer functions only when necessary; set an explicit empty `search_path`, fully qualify objects, revoke public execution, grant named roles, validate `auth.uid()`, and return projections rather than token material.
 

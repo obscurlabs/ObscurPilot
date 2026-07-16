@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./agent": {
+      "types": "./dist/agent.d.ts",
+      "import": "./dist/agent.js"
+    },
     "./audio": {
       "types": "./dist/audio.d.ts",
       "import": "./dist/audio.js"
@@ -11,6 +15,10 @@
     "./bootstrap": {
       "types": "./dist/bootstrap.d.ts",
       "import": "./dist/bootstrap.js"
+    },
+    "./cloud": {
+      "types": "./dist/cloud.d.ts",
+      "import": "./dist/cloud.js"
     },
     "./errors": {
       "types": "./dist/errors.d.ts",
@@ -31,6 +39,10 @@
     "./state": {
       "types": "./dist/state.d.ts",
       "import": "./dist/state.js"
+    },
+    "./twitch": {
+      "types": "./dist/twitch.d.ts",
+      "import": "./dist/twitch.js"
     }
   },
   "dependencies": {

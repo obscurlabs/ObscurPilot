@@ -28,27 +28,33 @@ No stack trace, SDK response body, token, raw transcript, or filesystem path cro
 
 ## 2. IPC channel registry
 
-| Channel                   | Direction        | Payload/result                                        |
-| ------------------------- | ---------------- | ----------------------------------------------------- |
-| `app:get-bootstrap:v1`    | renderer -> main | `{}` -> `BootstrapProjection`                         |
-| `state:get-snapshot:v1`   | renderer -> main | `{ afterVersion?: number }` -> `AppSnapshot`          |
-| `state:changed:v1`        | main -> renderer | `{ snapshotVersion, patches: StatePatch[] }`          |
-| `ptt:set-accelerator:v1`  | renderer -> main | `{ accelerator }` -> `{ registered }`                 |
-| `ptt:command:v1`          | renderer -> main | `{ action: 'press'                                    | 'release'    | 'cancel' }`->`PttProjection` |
-| `ptt:state:v1`            | main -> renderer | `{ sessionId?, phase, elapsedMs, level? }`            |
-| `intent:approve:v1`       | renderer -> main | `{ pendingIntentId, decision }` -> `IntentProjection` |
-| `intent:state:v1`         | main -> renderer | redacted intent/tool-loop phase                       |
-| `connection:command:v1`   | renderer -> main | `{ provider, action: 'connect'                        | 'disconnect' | 'retry' }`                   |
-| `connection:state:v1`     | main -> renderer | `ConnectionProjection`                                |
-| `obs:get-snapshot:v1`     | renderer -> main | `{}` -> redacted `ObsProjection`                      |
-| `twitch:begin-auth:v1`    | renderer -> main | `{}` -> `{ authorizationUrl, flowId }`                |
-| `twitch:complete-auth:v1` | renderer -> main | `{ flowId, callbackUrl }` -> account projection       |
-| `timeline:list:v1`        | renderer -> main | `{ cursor?, limit, filters? }` -> cursor page         |
-| `timeline:append:v1`      | main -> renderer | `TimelineProjection`                                  |
-| `settings:get:v1`         | renderer -> main | `{}` -> `SettingsProjection`                          |
-| `settings:update:v1`      | renderer -> main | `{ revision, patch }` -> updated settings             |
-| `feedback:submit:v1`      | renderer -> main | bounded `FeedbackInput` -> receipt                    |
-| `diagnostics:export:v1`   | renderer -> main | `{ includeSensitive: false }` -> save-dialog result   |
+| Channel                   | Direction        | Payload/result                                         |
+| ------------------------- | ---------------- | ------------------------------------------------------ |
+| `app:get-bootstrap:v1`    | renderer -> main | `{}` -> `BootstrapProjection`                          |
+| `state:get-snapshot:v1`   | renderer -> main | `{ afterVersion?: number }` -> `AppSnapshot`           |
+| `state:changed:v1`        | main -> renderer | `{ snapshotVersion, patches: StatePatch[] }`           |
+| `ptt:set-accelerator:v1`  | renderer -> main | `{ accelerator }` -> `{ registered }`                  |
+| `ptt:command:v1`          | renderer -> main | `{ action: 'press'                                     | 'release'    | 'cancel' }`->`PttProjection` |
+| `ptt:state:v1`            | main -> renderer | `{ sessionId?, phase, elapsedMs, level? }`             |
+| `intent:approve:v1`       | renderer -> main | `{ pendingIntentId, decision }` -> `IntentProjection`  |
+| `intent:state:v1`         | main -> renderer | redacted intent/tool-loop phase                        |
+| `connection:command:v1`   | renderer -> main | `{ provider, action: 'connect'                         | 'disconnect' | 'retry' }`                   |
+| `connection:state:v1`     | main -> renderer | `ConnectionProjection`                                 |
+| `obs:get-snapshot:v1`     | renderer -> main | `{}` -> redacted `ObsProjection`                       |
+| `twitch:begin-auth:v1`    | renderer -> main | `{}` -> `{ authorizationUrl, flowId }`                 |
+| `twitch:complete-auth:v1` | renderer -> main | `{ flowId, callbackUrl }` -> account projection        |
+| `live-session:command:v1` | renderer -> main | bounded prepare/start/stop/abort command -> projection |
+| `live-session:state:v1`   | main -> renderer | redacted saga phase, checklist, effects, and recovery  |
+| `chat:list:v1`            | renderer -> main | cursor/limit/filter -> bounded normalized chat page    |
+| `chat:analysis:v1`        | main -> renderer | redacted aggregate/suggestion projection               |
+| `moderation:command:v1`   | renderer -> main | typed target/action/evidence -> pending intent         |
+| `moderation:state:v1`     | main -> renderer | redacted pending/result projection                     |
+| `timeline:list:v1`        | renderer -> main | `{ cursor?, limit, filters? }` -> cursor page          |
+| `timeline:append:v1`      | main -> renderer | `TimelineProjection`                                   |
+| `settings:get:v1`         | renderer -> main | `{}` -> `SettingsProjection`                           |
+| `settings:update:v1`      | renderer -> main | `{ revision, patch }` -> updated settings              |
+| `feedback:submit:v1`      | renderer -> main | bounded `FeedbackInput` -> receipt                     |
+| `diagnostics:export:v1`   | renderer -> main | `{ includeSensitive: false }` -> save-dialog result    |
 
 Event subscription APIs must register exactly one IPC listener per callback and remove that same wrapped listener. Tests assert mount/unmount cycles leave listener counts unchanged.
 
@@ -119,3 +125,31 @@ Realtime loss does not block local execution. Reconnect, reauthenticate the chan
 ## 6. Error taxonomy
 
 Canonical codes include `VALIDATION_FAILED`, `AUTH_REQUIRED`, `PERMISSION_DENIED`, `RESOURCE_NOT_FOUND`, `PRECONDITION_FAILED`, `RATE_LIMITED`, `UPSTREAM_UNAVAILABLE`, `TIMEOUT`, `CONFLICT`, `CANCELLED`, `POLICY_REJECTED`, and `INTERNAL`. Adapters translate SDK errors once at their boundary. UI behavior depends on code and retryability, never string matching.
+
+## 7. Stage 11 Twitch capability and tool contract
+
+The OAuth scope set is derived from enabled capabilities and compared with the validated token on every connection. The application never requests a union of every possible Twitch scope.
+
+| Capability                 | Versioned tool                                  | Required scope                   | Default risk                    |
+| -------------------------- | ----------------------------------------------- | -------------------------------- | ------------------------------- |
+| Read chat                  | event ingestion only                            | `user:read:chat`                 | observe                         |
+| Update title/category/tags | `twitch.channel.update@1`                       | `channel:manage:broadcast`       | confirm as part of Go-Live plan |
+| Send a public message      | `twitch.chat.send_message@1`                    | `user:write:chat`                | confirm                         |
+| Delete one message         | `twitch.chat.delete_message@1`                  | `moderator:manage:chat_messages` | confirm by default              |
+| Timeout a channel user     | `twitch.moderation.timeout_user@1`              | `moderator:manage:banned_users`  | confirm by default              |
+| Permanently ban/unban      | `twitch.moderation.ban_user@1` / `unban_user@1` | `moderator:manage:banned_users`  | always confirm                  |
+| Personal block/unblock     | `twitch.user.block@1` / `unblock@1`             | `user:manage:blocked_users`      | always confirm                  |
+
+Every moderation input contains `targetProviderUserId`, normalized `targetLogin`, `action`, optional bounded `durationSeconds`, a registry-owned `reasonCode`, optional `evidenceMessageId`, `expectedAccountRevision`, and `commandId`. Free-form evidence text is never accepted as authorization. Before execution, main re-resolves the target, rejects broadcaster/moderator/protected accounts, verifies that the evidence belongs to the target where supplied, checks the current token scope and moderator relationship, and reissues confirmation if any target or action field changed.
+
+Live-session commands never expose arbitrary tool names. `live-session:command:v1` accepts only:
+
+```ts
+type LiveSessionCommand =
+  | { action: 'prepare'; profileId: string; mode: 'dry_run' | 'live' }
+  | { action: 'start'; planId: string; confirmationId: string }
+  | { action: 'stop'; sessionId: string }
+  | { action: 'abort'; sessionId: string; reasonCode: string };
+```
+
+Plans expire after 60 seconds by default and become invalid on any Twitch account revision, OBS generation/snapshot change, scope change, or profile revision change. `dry_run` structurally forbids Twitch broadcast start and substitutes an OBS recording verification step.

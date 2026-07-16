@@ -7,6 +7,22 @@
     "./boundary": {
       "types": "./dist/boundary.d.ts",
       "import": "./dist/boundary.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js"
+    },
+    "./repository": {
+      "types": "./dist/repository.d.ts",
+      "import": "./dist/repository.js"
+    },
+    "./sync": {
+      "types": "./dist/sync.d.ts",
+      "import": "./dist/sync.js"
     }
+  },
+  "dependencies": {
+    "@obscurpilot/contracts": "0.1.0",
+    "@supabase/supabase-js": "2.110.6"
   }
 }

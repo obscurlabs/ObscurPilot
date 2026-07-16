@@ -10,6 +10,43 @@ permissions:
   contents: read
 
 jobs:
+  supabase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install exact dependency graph
+        run: npm ci
+
+      - name: Start clean local Supabase stack
+        run: npx supabase start
+
+      - name: Verify upgrade from the pre-Stage-6 baseline
+        run: |
+          npx supabase db reset --local --version 202607150000
+          npx supabase migration up --local
+
+      - name: Run pgTAP after upgrade migration
+        run: npx supabase test db
+
+      - name: Verify clean migration replay
+        run: npx supabase db reset --local
+
+      - name: Run pgTAP after clean migration
+        run: npx supabase test db
+
+      - name: Stop local Supabase stack
+        if: always()
+        run: npx supabase stop --no-backup
+
   windows:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -40,6 +77,9 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Renderer secret-boundary scan
+        run: npm run verify:renderer-boundary
 
       - name: Production dependency audit
         run: npm run audit:dependencies

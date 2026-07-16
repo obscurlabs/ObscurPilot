@@ -24,6 +24,8 @@ export class BoundedLoopController {
   private toolCalls = 0;
   private argumentBytes = 0;
   private readonly startedAt: number;
+  private pausedAt: number | undefined;
+  private pausedDurationMs = 0;
 
   public constructor(
     private readonly now: () => number = Date.now,
@@ -53,8 +55,19 @@ export class BoundedLoopController {
   }
 
   public assertWithinDeadline(): void {
-    if (this.now() - this.startedAt > this.limits.maxWallClockMs) {
+    const current = this.pausedAt ?? this.now();
+    if (current - this.startedAt - this.pausedDurationMs > this.limits.maxWallClockMs) {
       throw new LoopLimitError('Tool loop deadline exceeded');
     }
+  }
+
+  public pauseDeadline(): void {
+    if (this.pausedAt === undefined) this.pausedAt = this.now();
+  }
+
+  public resumeDeadline(): void {
+    if (this.pausedAt === undefined) return;
+    this.pausedDurationMs += Math.max(0, this.now() - this.pausedAt);
+    this.pausedAt = undefined;
   }
 }

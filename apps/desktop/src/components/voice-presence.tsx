@@ -1,11 +1,19 @@
+import type { AgentInteractionProjection } from '@obscurpilot/contracts/agent';
 import type { PttProjection } from '@obscurpilot/contracts/audio';
 import { useEffect, useRef, useState } from 'react';
+import { Button } from './ui/button';
 
 const INITIAL: PttProjection = {
   phase: 'idle',
   elapsedMs: 0,
   level: 0,
   reasonCode: 'IDLE',
+};
+
+const INITIAL_AGENT: AgentInteractionProjection = {
+  phase: 'idle',
+  reasonCode: 'IDLE',
+  elapsedMs: 0,
 };
 
 const LABELS: Record<PttProjection['phase'], string> = {
@@ -18,8 +26,37 @@ const LABELS: Record<PttProjection['phase'], string> = {
   error: 'Microphone unavailable',
 };
 
-export function VoicePresence() {
+const AGENT_LABELS: Record<AgentInteractionProjection['phase'], string> = {
+  idle: 'Hold to speak',
+  transcribing: 'Understanding voice',
+  reasoning: 'Planning safely',
+  tool_active: 'Applying command',
+  awaiting_confirmation: 'Approval required',
+  completed: 'Command complete',
+  error: 'Command stopped',
+};
+
+const AGENT_STEPS: ReadonlyArray<{
+  readonly phase: AgentInteractionProjection['phase'];
+  readonly label: string;
+}> = [
+  { phase: 'transcribing', label: 'Understand' },
+  { phase: 'reasoning', label: 'Plan' },
+  { phase: 'tool_active', label: 'Apply' },
+  { phase: 'awaiting_confirmation', label: 'Confirm' },
+  { phase: 'completed', label: 'Complete' },
+];
+
+export function VoicePresence({
+  onAgentActivity,
+}: {
+  readonly onAgentActivity?: (projection: AgentInteractionProjection) => void;
+}) {
   const [projection, setProjection] = useState<PttProjection>(INITIAL);
+  const [agent, setAgent] = useState<AgentInteractionProjection>(INITIAL_AGENT);
+  const [decisionPending, setDecisionPending] = useState(false);
+  const [decisionNotice, setDecisionNotice] = useState<string>();
+  const [clock, setClock] = useState(() => Date.now());
   const orbRef = useRef<HTMLSpanElement>(null);
   const pressedRef = useRef(false);
 
@@ -41,6 +78,55 @@ export function VoicePresence() {
     [],
   );
 
+  useEffect(() => {
+    let active = true;
+    void window.obscurPilot
+      .getAgentInteraction()
+      .then((next) => {
+        if (active) {
+          setAgent(next);
+          onAgentActivity?.(next);
+        }
+      })
+      .catch(() => undefined);
+    const unsubscribe = window.obscurPilot.onAgentInteractionChanged((next) => {
+      if (active) {
+        setAgent(next);
+        setDecisionPending(false);
+        setDecisionNotice(undefined);
+        onAgentActivity?.(next);
+      }
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [onAgentActivity]);
+
+  useEffect(() => {
+    if (agent.confirmation === undefined) return;
+    const timer = window.setInterval(() => setClock(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [agent.confirmation]);
+
+  const decide = async (decision: 'approve' | 'deny') => {
+    if (agent.confirmation === undefined || decisionPending) return;
+    setDecisionPending(true);
+    setDecisionNotice(undefined);
+    try {
+      setAgent(
+        await window.obscurPilot.decideAgentConfirmation({
+          confirmationId: agent.confirmation.confirmationId,
+          decision,
+        }),
+      );
+    } catch {
+      setDecisionNotice('The decision could not be applied. Refresh state and repeat the command.');
+    } finally {
+      setDecisionPending(false);
+    }
+  };
+
   const press = () => {
     if (pressedRef.current) return;
     pressedRef.current = true;
@@ -52,8 +138,24 @@ export function VoicePresence() {
     void window.obscurPilot.commandPtt('release');
   };
 
+  const agentActive = agent.phase !== 'idle';
+  const label = agentActive ? AGENT_LABELS[agent.phase] : LABELS[projection.phase];
+  const reasonCode = agentActive ? agent.reasonCode : projection.reasonCode;
+  const visualPhase = agentActive ? agent.phase : projection.phase;
+  const currentStep = AGENT_STEPS.findIndex((step) => step.phase === agent.phase);
+  const confirmationRemainingMs =
+    agent.confirmation === undefined
+      ? 0
+      : Math.max(0, new Date(agent.confirmation.expiresAt).getTime() - clock);
+  const confirmationExpired = agent.confirmation !== undefined && confirmationRemainingMs === 0;
+
   return (
-    <section className="voice-presence" aria-labelledby="voice-presence-title">
+    <section
+      className="voice-presence"
+      id="command-center"
+      data-agent-phase={agent.phase}
+      aria-labelledby="voice-presence-title"
+    >
       <div>
         <p className="eyebrow">Voice boundary</p>
         <h2 id="voice-presence-title">Agent presence</h2>
@@ -64,8 +166,8 @@ export function VoicePresence() {
       </div>
       <button
         className="voice-control"
-        data-phase={projection.phase}
-        aria-label={LABELS[projection.phase]}
+        data-phase={visualPhase}
+        aria-label="Hold to speak"
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -94,12 +196,94 @@ export function VoicePresence() {
           <span className="orb-ring orb-ring-inner" />
           <span className="orb-core" />
         </span>
-        <span className="voice-label">{LABELS[projection.phase]}</span>
-        <span className="voice-reason">{projection.reasonCode.replaceAll('_', ' ')}</span>
+        <span className="voice-label">{label}</span>
+        <span className="voice-reason">{reasonCode.replaceAll('_', ' ')}</span>
       </button>
-      <div className="sr-only" aria-live="polite">
-        {LABELS[projection.phase]}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {label}
       </div>
+      {agentActive ? (
+        <div className="agent-state-panel" aria-label="Agent command progress">
+          <ol className="agent-progress">
+            {AGENT_STEPS.map((step, index) => {
+              const state =
+                agent.phase === 'error'
+                  ? 'stopped'
+                  : index < currentStep
+                    ? 'complete'
+                    : index === currentStep
+                      ? 'current'
+                      : 'pending';
+              return (
+                <li
+                  data-state={state}
+                  key={step.phase}
+                  aria-current={state === 'current' ? 'step' : undefined}
+                >
+                  <span aria-hidden="true" />
+                  {step.label}
+                </li>
+              );
+            })}
+          </ol>
+          <dl className="agent-telemetry">
+            <div>
+              <dt>Elapsed</dt>
+              <dd>{(agent.elapsedMs / 1_000).toFixed(1)}s</dd>
+            </div>
+            <div>
+              <dt>Model</dt>
+              <dd>{agent.model?.replace('openai/', '').replace('qwen/', '') ?? 'Pending'}</dd>
+            </div>
+            <div>
+              <dt>Protected tool</dt>
+              <dd>{agent.tool?.name ?? 'None'}</dd>
+            </div>
+          </dl>
+        </div>
+      ) : null}
+      {agent.confirmation === undefined ? null : (
+        <div
+          className="agent-confirmation"
+          role="group"
+          aria-label="Command approval"
+          data-expired={confirmationExpired}
+        >
+          <div>
+            <p className="agent-confirmation-title">Confirm protected command</p>
+            <p className="agent-confirmation-detail">
+              {agent.confirmation.tool.name.replaceAll('_', ' ').replaceAll('.', ' ')}
+            </p>
+            <p className="agent-confirmation-summary">
+              {agent.confirmation.summaryCode.replaceAll('_', ' ')} ·{' '}
+              {confirmationExpired
+                ? 'Expired — repeat the command'
+                : `${Math.ceil(confirmationRemainingMs / 1_000)}s remaining`}
+            </p>
+          </div>
+          <div className="agent-confirmation-actions">
+            <Button
+              variant="secondary"
+              disabled={decisionPending || confirmationExpired}
+              onClick={() => void decide('deny')}
+            >
+              Deny
+            </Button>
+            <Button
+              variant="primary"
+              disabled={decisionPending || confirmationExpired}
+              onClick={() => void decide('approve')}
+            >
+              {decisionPending ? 'Applying…' : 'Approve'}
+            </Button>
+          </div>
+        </div>
+      )}
+      {decisionNotice === undefined ? null : (
+        <p className="agent-decision-notice" role="alert">
+          {decisionNotice}
+        </p>
+      )}
       {projection.clip !== undefined ? (
         <p className="clip-proof">
           Captured {Math.round(projection.clip.durationMs / 100) / 10}s ·{' '}

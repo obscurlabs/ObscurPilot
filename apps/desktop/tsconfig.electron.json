@@ -7,8 +7,15 @@
     "moduleResolution": "NodeNext",
     "outDir": ".types/electron",
     "rootDir": "electron",
+    "skipLibCheck": true,
     "types": ["node"]
   },
   "include": ["electron/**/*.ts"],
-  "references": [{ "path": "../../packages/contracts" }, { "path": "../../packages/domain" }]
+  "references": [
+    { "path": "../../packages/contracts" },
+    { "path": "../../packages/domain" },
+    { "path": "../../packages/adapters-obs" },
+    { "path": "../../packages/adapters-supabase" },
+    { "path": "../../packages/adapters-twitch" }
+  ]
 }

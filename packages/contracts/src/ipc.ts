@@ -13,8 +13,22 @@ export const IPC_CHANNELS = {
   audioListDevices: 'audio:list-devices:v1',
   audioSelectDevice: 'audio:select-device:v1',
   pttChanged: 'audio:ptt-changed:v1',
+  agentGetProjection: 'agent:get-projection:v1',
+  agentConfirmationDecision: 'agent:confirmation-decision:v1',
+  agentInteractionChanged: 'agent:interaction-changed:v1',
   obsGetSnapshot: 'obs:get-snapshot:v1',
   obsReconnect: 'obs:reconnect:v1',
+  cloudGetAuth: 'cloud:get-auth:v1',
+  cloudSignIn: 'cloud:sign-in:v1',
+  cloudSignUp: 'cloud:sign-up:v1',
+  cloudResendConfirmation: 'cloud:resend-confirmation:v1',
+  cloudSignOut: 'cloud:sign-out:v1',
+  cloudRequestDeletion: 'cloud:request-deletion:v1',
+  twitchGetProjection: 'twitch:get-projection:v1',
+  twitchConnect: 'twitch:connect:v1',
+  twitchDisconnect: 'twitch:disconnect:v1',
+  twitchReconnect: 'twitch:reconnect:v1',
+  twitchActivity: 'twitch:activity:v1',
 } as const;
 
 const RequestMetadataSchema = z

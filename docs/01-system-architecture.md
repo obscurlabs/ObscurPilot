@@ -13,6 +13,8 @@ Electron Main -----------------------------------------------------+
 |                                /              \                   |
 |                          OBS Adapter       Twitch Adapter          |
 |                                \              /                   |
+|                    Live Session / Moderation Coordinator          |
+|                                      |                            |
 |                         Event/State Coordinator -> Sync Outbox    |
 |                                                       |           |
 +---------------- typed IPC -----------------------------|-----------+
@@ -94,6 +96,39 @@ Use npm workspaces with one lockfile. Package dependency direction is `desktop -
 
 Default loop limits: 4 model turns, 6 tool calls, 15-second wall clock excluding explicit confirmation wait, 32 KiB cumulative arguments. These values are configuration with hard ceilings.
 
+### Live-session and moderation lifecycle
+
+The Stage 11 coordinator is a deterministic saga above the existing tools; it is not an unrestricted autonomous agent.
+
+```text
+voice/UI request
+  -> resolve versioned session profile
+  -> detect/launch configured OBS executable
+  -> validate OBS handshake and required resources
+  -> validate Twitch identity, scopes, category, and current metadata
+  -> create immutable redacted plan + captured provider revisions
+  -> explicit Go-Live confirmation
+  -> update Twitch metadata
+  -> prepare OBS scenes/inputs/recording
+  -> start OBS streaming
+  -> verify OBS output active + Twitch stream.online
+  -> supervise chat, events, and health
+  -> stop/abort -> verify Twitch stream.offline -> close session
+```
+
+No model can change the order, fabricate a profile, supply an executable path, weaken a precondition, or approve a consequential step. The coordinator checkpoints each effect with a semantic idempotency key. An uncertain start is reconciled from OBS and Twitch truth and is never blindly replayed.
+
+Chat follows a separate bounded path:
+
+```text
+EventSub message -> normalize/dedupe -> deterministic rules -> bounded analysis
+                 -> informational summary OR moderation suggestion
+                 -> resolve immutable target -> policy + confirmation -> Helix action
+                 -> EventSub/Helix verification -> audit
+```
+
+Analysis and execution are intentionally separated. Model output may label or suggest; only versioned tools with current scopes, protected-account checks, target identity validation, and creator approval can delete, timeout, ban, unban, block, unblock, or send a public reply. Channel moderation and personal blocking are different tool families and permissions.
+
 ## 4. Core service interfaces
 
 ```ts
@@ -123,7 +158,7 @@ interface DurableOutbox {
 
 - OBS is authoritative for current OBS runtime state.
 - Twitch is authoritative for Twitch resource state and incoming EventSub facts.
-- Main process is authoritative for connectivity, active voice session, pending intent, and in-flight command state.
+- Main process is authoritative for connectivity, active voice session, pending intent, in-flight command state, active live-session saga, moderation review queue, and bounded in-memory chat analysis window.
 - Supabase is authoritative for durable user profiles, configurations, grants, device registrations, preferences, and historical audit data.
 - Renderer projections are disposable caches.
 

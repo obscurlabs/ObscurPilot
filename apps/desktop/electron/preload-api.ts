@@ -30,6 +30,30 @@ import {
   ReconnectObsPayloadSchema,
 } from '@obscurpilot/contracts/obs';
 import type { ZodType } from 'zod';
+import {
+  CloudAuthProjectionSchema,
+  CloudConfirmationPayloadSchema,
+  CloudCredentialPayloadSchema,
+  CloudGetAuthPayloadSchema,
+  CloudSignOutPayloadSchema,
+  type CloudCredentialPayload,
+  type CloudConfirmationPayload,
+} from '@obscurpilot/contracts/cloud';
+import {
+  TwitchActivityEventSchema,
+  TwitchEmptyPayloadSchema,
+  TwitchOperationAcceptedSchema,
+  TwitchProjectionSchema,
+  type TwitchActivity,
+} from '@obscurpilot/contracts/twitch';
+import {
+  AgentConfirmationDecisionPayloadSchema,
+  AgentEmptyPayloadSchema,
+  AgentInteractionChangedEventSchema,
+  AgentInteractionProjectionSchema,
+  type AgentConfirmationDecisionPayload,
+  type AgentInteractionProjection,
+} from '@obscurpilot/contracts/agent';
 
 interface RendererIpc {
   invoke(channel: string, request: unknown): Promise<unknown>;
@@ -119,6 +143,35 @@ export function createRendererApi(ipc: RendererIpc): Readonly<ObscurPilotRendere
         ipc.removeListener(IPC_CHANNELS.pttChanged, wrapped);
       };
     },
+    getAgentInteraction: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.agentGetProjection,
+        AgentEmptyPayloadSchema.parse({}),
+        AgentInteractionProjectionSchema,
+      ),
+    decideAgentConfirmation: (payload: AgentConfirmationDecisionPayload) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.agentConfirmationDecision,
+        AgentConfirmationDecisionPayloadSchema.parse(payload),
+        AgentInteractionProjectionSchema,
+      ),
+    onAgentInteractionChanged: (
+      listener: (projection: Readonly<AgentInteractionProjection>) => void,
+    ) => {
+      let subscribed = true;
+      const wrapped = (_event: unknown, rawEnvelope: unknown) => {
+        const envelope = AgentInteractionChangedEventSchema.parse(rawEnvelope);
+        listener(envelope.payload);
+      };
+      ipc.on(IPC_CHANNELS.agentInteractionChanged, wrapped);
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        ipc.removeListener(IPC_CHANNELS.agentInteractionChanged, wrapped);
+      };
+    },
     getObsSnapshot: () =>
       invoke(
         ipc,
@@ -133,6 +186,89 @@ export function createRendererApi(ipc: RendererIpc): Readonly<ObscurPilotRendere
         ReconnectObsPayloadSchema.parse({}),
         OperationAcceptedSchema,
       ),
+    getCloudAuth: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.cloudGetAuth,
+        CloudGetAuthPayloadSchema.parse({}),
+        CloudAuthProjectionSchema,
+      ),
+    signInCloud: (credentials: CloudCredentialPayload) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.cloudSignIn,
+        CloudCredentialPayloadSchema.parse(credentials),
+        CloudAuthProjectionSchema,
+      ),
+    signUpCloud: (credentials: CloudCredentialPayload) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.cloudSignUp,
+        CloudCredentialPayloadSchema.parse(credentials),
+        CloudAuthProjectionSchema,
+      ),
+    resendCloudConfirmation: (payload: CloudConfirmationPayload) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.cloudResendConfirmation,
+        CloudConfirmationPayloadSchema.parse(payload),
+        OperationAcceptedSchema,
+      ),
+    signOutCloud: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.cloudSignOut,
+        CloudSignOutPayloadSchema.parse({ scope: 'local' }),
+        CloudAuthProjectionSchema,
+      ),
+    requestCloudAccountDeletion: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.cloudRequestDeletion,
+        CloudGetAuthPayloadSchema.parse({}),
+        OperationAcceptedSchema,
+      ),
+    getTwitchProjection: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.twitchGetProjection,
+        TwitchEmptyPayloadSchema.parse({}),
+        TwitchProjectionSchema,
+      ),
+    connectTwitch: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.twitchConnect,
+        TwitchEmptyPayloadSchema.parse({}),
+        TwitchOperationAcceptedSchema,
+      ),
+    disconnectTwitch: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.twitchDisconnect,
+        TwitchEmptyPayloadSchema.parse({}),
+        TwitchProjectionSchema,
+      ),
+    reconnectTwitch: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.twitchReconnect,
+        TwitchEmptyPayloadSchema.parse({}),
+        TwitchOperationAcceptedSchema,
+      ),
+    onTwitchActivity: (listener: (activity: Readonly<TwitchActivity>) => void) => {
+      let subscribed = true;
+      const wrapped = (_event: unknown, rawEnvelope: unknown) => {
+        const envelope = TwitchActivityEventSchema.parse(rawEnvelope);
+        listener(envelope.payload);
+      };
+      ipc.on(IPC_CHANNELS.twitchActivity, wrapped);
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        ipc.removeListener(IPC_CHANNELS.twitchActivity, wrapped);
+      };
+    },
   });
 }
 

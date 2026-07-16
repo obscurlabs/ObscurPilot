@@ -82,6 +82,8 @@ Each stage is a hard gate. Work may be prepared in parallel, but no dependent st
 
 **Prerequisites:** Stages 2–3; Supabase projects for local/test environments.
 
+**Status:** implementation complete; local database execution is pending an installed Docker CLI/runtime. See the [Stage 6 acceptance record](stage-6/acceptance-record.md).
+
 **Tasks:** add CLI configuration and migrations; create schema/indexes/triggers/RLS; implement Auth session handling in main; device registration; repositories; revision conflicts; local outbox with bounded encrypted persistence; Realtime resubscription/catch-up; retention and account deletion flows.
 
 **Definition of Done:** clean/upgrade migration tests pass; user A cannot access user B under any CRUD operation; offline mutations flush exactly once; conflict fixtures are deterministic; service key is absent from desktop artifacts.
@@ -98,6 +100,8 @@ Each stage is a hard gate. Work may be prepared in parallel, but no dependent st
 
 ## Stage 8 — Groq transcription adapter
 
+Status: **complete**. See the [Stage 8 acceptance record](stage-8/acceptance-record.md).
+
 **Objective:** transform bounded audio into reliable, observable text using `whisper-large-v3-turbo`.
 
 **Prerequisites:** Stage 4; secure Groq credential injection.
@@ -107,6 +111,8 @@ Each stage is a hard gate. Work may be prepared in parallel, but no dependent st
 **Definition of Done:** recorded fixtures cover silence, accents, noise, maximum duration, timeout, 429, 5xx, malformed response, cancel, and credential failure; no audio/transcript leaks under default settings; local dispatch meets budget.
 
 ## Stage 9 — Reasoning and guarded tool ingestion
+
+Status: **complete**. See the [Stage 9 acceptance record](stage-9/acceptance-record.md).
 
 **Objective:** convert transcripts into deterministic, policy-controlled tool plans through Groq reasoning models.
 
@@ -118,6 +124,8 @@ Each stage is a hard gate. Work may be prepared in parallel, but no dependent st
 
 ## Stage 10 — Production control board
 
+Status: **complete**. See the [Stage 10 acceptance record](stage-10/acceptance-record.md).
+
 **Objective:** deliver a fast, accessible, state-driven desktop interaction surface.
 
 **Prerequisites:** stable IPC projections from Stages 2–9.
@@ -126,31 +134,54 @@ Each stage is a hard gate. Work may be prepared in parallel, but no dependent st
 
 **Definition of Done:** keyboard and screen-reader flows pass; reduced motion works; 10,000-event fixture stays within frame/memory budgets; reload reconstructs from snapshot; every error code has an actionable presentation; no authoritative mutation occurs solely in renderer state.
 
-## Stage 11 — Controlled learning and evaluation
+## Stage 11 — Live-session orchestration, chat intelligence, and moderation
+
+**Objective:** execute a complete, policy-controlled Twitch and OBS stream lifecycle from one voice or UI request, while providing bounded chat analysis and explicit creator-controlled moderation.
+
+**Prerequisites:** Stages 5, 7, 9, and 10; a dedicated Twitch acceptance account; OBS WebSocket on loopback; Twitch reauthorization for only the scopes enabled by the user.
+
+**Tasks:**
+
+1. Define versioned `LiveSessionProfileV1`, `LiveSessionPlanV1`, `LiveSessionProjection`, `ChatMessageProjection`, `ChatAnalysisProjection`, and `ModerationIntentV1` contracts. Profiles store data—not hard-coded game scripts—including Twitch title/category/tags, required OBS scenes/inputs, pre-live scene, live scene, recording preference, and verification timeouts.
+2. Add an Electron-main `ObsProcessSupervisor` that detects an existing OBS process or launches one configured executable using `spawn(executable, args, { shell: false })`; validate the absolute path, never accept a voice-supplied path, enforce one supervised instance, and wait for a validated WebSocket handshake before proceeding. Opening a Twitch dashboard uses only an allowlisted HTTPS origin through `shell.openExternal` and is never required for API execution.
+3. Extend Twitch OAuth through incremental reauthorization and exact scope reconciliation. Core scopes are `channel:manage:broadcast` for title/category/tags, `user:read:chat` for EventSub chat messages, `moderator:manage:banned_users` for timeout/ban/unban, and `moderator:manage:chat_messages` for message deletion. Optional personal block/unblock uses the separate `user:manage:blocked_users` scope; optional chat replies use `user:write:chat`. Missing or revoked scopes disable only their associated tools.
+4. Extend the Twurple adapter with category search and immutable game-ID resolution, channel-information read/update, stream status verification, chat-message EventSub ingestion, chat delete, timeout, ban/unban, personal block/unblock, and optional send-message operations. Reconcile `channel.update`, `stream.online`, `stream.offline`, `channel.chat.message`, deletion, clear-user, and ban events after reconnect.
+5. Add exact versioned tools: `twitch.channel.update`, `twitch.chat.send_message`, `twitch.chat.delete_message`, `twitch.moderation.timeout_user`, `twitch.moderation.ban_user`, `twitch.moderation.unban_user`, `twitch.user.block`, and `twitch.user.unblock`. Channel bans and personal blocks remain distinct. Resolve a spoken/display login to an immutable provider user ID, reject ambiguous targets, and show the final ID/login, action, duration, reason code, and evidence message before approval.
+6. Implement a durable saga-style `LiveSessionCoordinator` with states `draft -> preflight -> awaiting_confirmation -> applying_twitch -> preparing_obs -> starting_output -> verifying_live -> live`, plus `rolling_back`, `failed`, `stopping`, and `stopped`. A request such as “prepare a Sekiro stream and go live” resolves a profile, validates Twitch scopes and category, validates OBS resources, computes a redacted plan, requests confirmation, applies metadata, prepares OBS, starts output, and waits for authoritative OBS plus Twitch readiness.
+7. Give every workflow and provider mutation a command ID, semantic idempotency key, expected provider snapshot/revision, deadline, and compensation record. Before live confirmation, preflight is read-only. If metadata succeeds but OBS preparation fails, restore captured metadata where safe. If start outcome is uncertain, resnapshot OBS and Twitch instead of retrying blindly. Stop/abort is always available and supersedes queued non-safety work.
+8. Normalize chat events into a bounded sliding window with EventSub message-ID deduplication, per-user burst control, Unicode normalization, link/mention metadata, and badge/role flags. Run cheap deterministic rules first and batch only suspicious or requested content for Groq analysis. Analysis produces reason codes, confidence, severity, and a suggested action; it never grants permission or performs moderation itself.
+9. Require explicit confirmation for permanent ban, personal block, bulk-clear, public chat send, and any low-confidence target. Timeout and single-message deletion may use a user-configurable policy but default to confirmation. Automatic permanent sanctions are prohibited. Broadcaster, moderator, allowlisted, and protected accounts fail closed before any model-selected action.
+10. Keep raw chat text memory-bounded and non-persistent by default. Persist only redacted analysis/audit metadata and provider message/user identifiers needed for a short moderation evidence window. Any opt-in raw-text retention has an explicit purpose, expiry, export, and deletion path.
+11. Add the Stage 10 session console: preflight checklist, planned Twitch/OBS changes, one final Go-Live approval, authoritative live status, stop/abort recovery, chat velocity and analysis summaries, moderation review queue, target identity display, undo where the provider permits it, and clear differentiation between timeout, channel ban, and personal block.
+12. Build local dry-run mode that performs real voice reasoning and OBS preparation but substitutes recording for streaming and uses a deterministic Twitch mutation simulator. Then run a dedicated-account acceptance gate for metadata, EventSub chat, timeout/ban/unban, delete, block/unblock, start/stop verification, revocation, rate limits, disconnects, and rollback before any creator account is used.
+
+**Definition of Done:** a packaged desktop executes the complete profile-driven voice-to-preflight-to-confirmation workflow; local dry-run never broadcasts publicly; a dedicated Twitch account proves metadata changes, chat ingestion, creator-approved moderation, OBS start/stop coordination, and authoritative online/offline verification; target-user mismatch, unconfirmed permanent sanctions, duplicate provider effects, leaked chat/token content, and unreconciled uncertain starts are all zero across adversarial, reconnect, retry, and rollback suites.
+
+## Stage 12 — Controlled learning and evaluation
 
 **Objective:** improve personal relevance through explicit feedback without unsafe online self-modification.
 
-**Prerequisites:** Stage 9 audit/version data and Stage 10 feedback UX.
+**Prerequisites:** Stage 9 audit/version data, Stage 10 feedback UX, and Stage 11 workflow/moderation outcomes.
 
 **Tasks:** implement preference facts with provenance/confidence/expiry; feedback capture; redaction; evaluation dataset builder; offline replay harness; candidate policy/prompt versioning; acceptance thresholds; shadow evaluation; rollback; opt-in and deletion controls.
 
 **Definition of Done:** preferences cannot grant tools or weaken confirmation; poisoned/outlier feedback is bounded; candidates cannot activate without evaluation approval; rollback restores prior behavior; deletion removes retained learning data under policy.
 
-## Stage 12 — Reliability, security, and performance hardening
+## Stage 13 — Reliability, security, and performance hardening
 
 **Objective:** prove the whole system under failure, load, and hostile input.
 
-**Prerequisites:** Stages 1–11 feature-complete.
+**Prerequisites:** Stages 1–12 feature-complete.
 
 **Tasks:** run threat-model review; dependency/SBOM/signing scans; IPC and schema fuzzing; chaos proxy tests; OBS/Twitch/Groq/Supabase outage matrix; clock/network/device fault injection; long-session soak; renderer profiling; memory/handle leak detection; log-redaction canaries; database load/index analysis.
 
 **Definition of Done:** no critical/high unresolved security findings; 8-hour reference soak meets memory/crash thresholds; all recovery objectives and performance budgets pass; zero duplicate side effects across the chaos matrix.
 
-## Stage 13 — Packaging, free-tier deployment, and release operations
+## Stage 14 — Packaging, free-tier deployment, and release operations
 
 **Objective:** ship reproducible desktop artifacts and operate the cloud portion within supported free tiers for initial use.
 
-**Prerequisites:** Stage 12 and release credentials.
+**Prerequisites:** Stage 13 and release credentials.
 
 **Tasks:** configure Electron packaging per OS, code signing/notarization when credentials exist, secure update metadata, channel/version strategy, CI release provenance/checksums/SBOM, Supabase production migrations and environment secrets, OAuth production callbacks, rate/usage budgets, backups, diagnostics, crash reporting with consent, update rollback and database compatibility window.
 
@@ -158,11 +189,11 @@ Each stage is a hard gate. Work may be prepared in parallel, but no dependent st
 
 **Definition of Done:** fresh install, upgrade, downgrade-within-window, offline start, revoked credential, and rollback drills pass; artifacts verify checksums/signatures where configured; production has no development keys; documented free-tier alerts prevent silent quota failure.
 
-## Stage 14 — Release candidate and production acceptance
+## Stage 15 — Release candidate and production acceptance
 
 **Objective:** convert the hardened build into a supportable production release.
 
-**Prerequisites:** Stage 13.
+**Prerequisites:** Stage 14.
 
 **Tasks:** execute full traceability matrix; closed beta with telemetry consent; triage defects by severity; freeze contracts/migrations; write user-safe recovery/runbooks; test account export/deletion; capture baseline SLOs; tag immutable release and archive evidence.
 
