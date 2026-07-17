@@ -102,7 +102,7 @@ import {
 import { VoiceOrchestrator } from './voice-orchestrator.js';
 import { HandsFreeConversation } from './hands-free-conversation.js';
 import { ToolRegistry } from '@obscurpilot/domain/tool-registry';
-import { authorizeTool } from '@obscurpilot/domain/policy';
+import { authorizeTool, type ToolGrant } from '@obscurpilot/domain/policy';
 import {
   ChatAnalysisEventSchema,
   ChatMessageEventSchema,
@@ -145,6 +145,35 @@ type Stage11TwitchToolInput = {
   readonly durationSeconds?: number;
   readonly reason?: string;
 };
+
+const LOCAL_VOICE_TOOL_GRANTS: readonly ToolGrant[] = (
+  [
+    ['obs.read_snapshot', ['obs:read']],
+    ['obs.set_program_scene', ['obs:scene:write']],
+    ['obs.set_input_mute', ['obs:audio:write']],
+    ['obs.start_stream', ['obs:stream:write']],
+    ['obs.stop_stream', ['obs:stream:write']],
+    ['obs.start_record', ['obs:record:write']],
+    ['obs.stop_record', ['obs:record:write']],
+    ['twitch.read_connection', ['twitch:read']],
+    ['live_session.prepare_profile', ['session:prepare']],
+    ['live_session.auto_prepare', ['session:prepare']],
+    ['live_session.start_prepared', ['session:start']],
+    ['live_session.stop', ['session:stop']],
+    ['twitch.channel.update', ['twitch:channel:write']],
+    ['twitch.chat.send_message', ['twitch:chat:write']],
+    ['twitch.chat.delete_message', ['twitch:chat:moderate']],
+    ['twitch.moderation.timeout_user', ['twitch:moderate']],
+    ['twitch.moderation.ban_user', ['twitch:moderate']],
+    ['twitch.moderation.unban_user', ['twitch:moderate']],
+    ['twitch.user.block', ['twitch:user:block']],
+    ['twitch.user.unblock', ['twitch:user:block']],
+  ] as const
+).map(([toolName, scopes]) => ({
+  toolName,
+  scopes: new Set(scopes),
+  expiresAt: Number.MAX_SAFE_INTEGER,
+}));
 
 function stage11Record(input: unknown): Record<string, unknown> {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
@@ -708,10 +737,14 @@ async function startApplication(): Promise<void> {
           readonly language: string;
           readonly announcementText?: string;
           readonly countdownSeconds: number;
+          readonly startNow: boolean;
           readonly mode: 'dry_run' | 'live';
         }
       | undefined;
-    const getGrants = () => cloudBridge?.toolGrantSnapshot() ?? [];
+    const getGrants = () => {
+      const cloudGrants = cloudBridge?.toolGrantSnapshot() ?? [];
+      return cloudGrants.length > 0 ? cloudGrants : LOCAL_VOICE_TOOL_GRANTS;
+    };
     for (const tool of createObsProductionTools(obsBridge, { getGrants })) {
       registry.register(tool);
     }
@@ -752,7 +785,7 @@ async function startApplication(): Promise<void> {
       risk: 'reversible',
       modelName: 'live_session_auto_prepare_v1',
       description:
-        'Resolve a Twitch category, provision OBS resources, save title/tags/language metadata, optionally queue a live chat announcement, and prepare an immutable plan. A zero countdown starts on the live scene without delay.',
+        'Resolve a Twitch category, provision OBS resources, save title/tags/language metadata, optionally queue a live chat announcement, and prepare an immutable plan. When startNow is true in live mode, immediately execute the prepared plan. A zero countdown starts on the live scene without delay.',
       parameters: {
         type: 'object',
         properties: {
@@ -766,6 +799,7 @@ async function startApplication(): Promise<void> {
           language: { type: 'string', pattern: '^[a-z]{2}$' },
           announcementText: { type: 'string', minLength: 1, maxLength: 500 },
           countdownSeconds: { type: 'integer', minimum: 0, maximum: 3600 },
+          startNow: { type: 'boolean' },
           mode: { type: 'string', enum: ['dry_run', 'live'] },
         },
         required: ['categoryQuery', 'mode'],
@@ -783,6 +817,7 @@ async function startApplication(): Promise<void> {
                 'language',
                 'announcementText',
                 'countdownSeconds',
+                'startNow',
                 'mode',
               ].includes(key),
           )
@@ -800,6 +835,9 @@ async function startApplication(): Promise<void> {
         }
         if (!['dry_run', 'live'].includes(String(value.mode))) {
           throw new Error('LIVE_SESSION_MODE_REQUIRED');
+        }
+        if (value.startNow === true && value.mode !== 'live') {
+          throw new Error('START_NOW_REQUIRES_LIVE_MODE');
         }
         return {
           categoryQuery: stage11String(value, 'categoryQuery', 120),
@@ -821,6 +859,7 @@ async function startApplication(): Promise<void> {
             ? { announcementText: value.announcementText.trim().slice(0, 500) }
             : {}),
           countdownSeconds,
+          startNow: value.startNow === true,
           mode: value.mode as 'dry_run' | 'live',
         };
       },
@@ -911,12 +950,20 @@ async function startApplication(): Promise<void> {
           pendingLiveAnnouncements.set(projection.plan.planId, input.announcementText);
         }
         pendingVoicePreparation = undefined;
+        const startAccepted =
+          input.startNow &&
+          projection.phase === 'awaiting_confirmation' &&
+          projection.plan !== undefined;
+        const started = startAccepted
+          ? liveSession.decide(projection.plan!.planId, 'approve')
+          : projection;
         return {
-          phase: projection.phase,
-          reasonCode: projection.reasonCode,
+          phase: started.phase,
+          reasonCode: started.reasonCode,
           profileName: profile.name,
           categoryName: category.name,
           countdownSeconds: profile.obs.countdownSeconds,
+          startAccepted,
           planId: projection.plan?.planId,
         };
       },
@@ -1260,6 +1307,12 @@ async function startApplication(): Promise<void> {
         transport: createSdkReasoningTransport(groqClient),
       }),
       registry,
+      limits: {
+        maxTurns: 6,
+        maxToolCalls: 8,
+        maxWallClockMs: 120_000,
+        maxArgumentBytes: 32 * 1024,
+      },
       getSnapshot: () => {
         const obs = obsBridge.snapshot();
         const twitch = twitchBridge?.snapshot();
