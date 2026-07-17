@@ -144,7 +144,7 @@ Status: **complete**. See the [Stage 10 acceptance record](stage-10/acceptance-r
 
 1. Define versioned `LiveSessionProfileV1`, `LiveSessionPlanV1`, `LiveSessionProjection`, `ChatMessageProjection`, `ChatAnalysisProjection`, and `ModerationIntentV1` contracts. Profiles store data—not hard-coded game scripts—including Twitch title/category/tags, required OBS scenes/inputs, pre-live scene, live scene, recording preference, and verification timeouts.
 2. Add an Electron-main `ObsProcessSupervisor` that detects an existing OBS process or launches one configured executable using `spawn(executable, args, { shell: false })`; validate the absolute path, never accept a voice-supplied path, enforce one supervised instance, and wait for a validated WebSocket handshake before proceeding. Opening a Twitch dashboard uses only an allowlisted HTTPS origin through `shell.openExternal` and is never required for API execution.
-3. Extend Twitch OAuth through incremental reauthorization and exact scope reconciliation. Core scopes are `channel:manage:broadcast` for title/category/tags, `user:read:chat` for EventSub chat messages, `moderator:manage:banned_users` for timeout/ban/unban, and `moderator:manage:chat_messages` for message deletion. Optional personal block/unblock uses the separate `user:manage:blocked_users` scope; optional chat replies use `user:write:chat`. Missing or revoked scopes disable only their associated tools.
+3. Extend Twitch OAuth through incremental reauthorization and exact scope reconciliation. Core scopes are `channel:manage:broadcast` for title/category/tags, `user:read:chat` for EventSub chat messages, `channel:moderate` for the pinned Twurple `channel.ban` v1 EventSub subscription, `moderator:manage:banned_users` for timeout/ban/unban mutations, and `moderator:manage:chat_messages` for message deletion. Optional personal block/unblock uses the separate `user:manage:blocked_users` scope; optional chat replies use `user:write:chat`. Missing or revoked scopes disable only their associated tools.
 4. Extend the Twurple adapter with category search and immutable game-ID resolution, channel-information read/update, stream status verification, chat-message EventSub ingestion, chat delete, timeout, ban/unban, personal block/unblock, and optional send-message operations. Reconcile `channel.update`, `stream.online`, `stream.offline`, `channel.chat.message`, deletion, clear-user, and ban events after reconnect.
 5. Add exact versioned tools: `twitch.channel.update`, `twitch.chat.send_message`, `twitch.chat.delete_message`, `twitch.moderation.timeout_user`, `twitch.moderation.ban_user`, `twitch.moderation.unban_user`, `twitch.user.block`, and `twitch.user.unblock`. Channel bans and personal blocks remain distinct. Resolve a spoken/display login to an immutable provider user ID, reject ambiguous targets, and show the final ID/login, action, duration, reason code, and evidence message before approval.
 6. Implement a durable saga-style `LiveSessionCoordinator` with states `draft -> preflight -> awaiting_confirmation -> applying_twitch -> preparing_obs -> starting_output -> verifying_live -> live`, plus `rolling_back`, `failed`, `stopping`, and `stopped`. A request such as “prepare a Sekiro stream and go live” resolves a profile, validates Twitch scopes and category, validates OBS resources, computes a redacted plan, requests confirmation, applies metadata, prepares OBS, starts output, and waits for authoritative OBS plus Twitch readiness.
@@ -156,6 +156,23 @@ Status: **complete**. See the [Stage 10 acceptance record](stage-10/acceptance-r
 12. Build local dry-run mode that performs real voice reasoning and OBS preparation but substitutes recording for streaming and uses a deterministic Twitch mutation simulator. Then run a dedicated-account acceptance gate for metadata, EventSub chat, timeout/ban/unban, delete, block/unblock, start/stop verification, revocation, rate limits, disconnects, and rollback before any creator account is used.
 
 **Definition of Done:** a packaged desktop executes the complete profile-driven voice-to-preflight-to-confirmation workflow; local dry-run never broadcasts publicly; a dedicated Twitch account proves metadata changes, chat ingestion, creator-approved moderation, OBS start/stop coordination, and authoritative online/offline verification; target-user mismatch, unconfirmed permanent sanctions, duplicate provider effects, leaked chat/token content, and unreconciled uncertain starts are all zero across adversarial, reconnect, retry, and rollback suites.
+
+## Stage 11.1 — Hands-free conversational production
+
+**Objective:** make the Stage 11 Twitch/OBS lifecycle operable from the protected corner Pilot without opening the control board or repeatedly using push-to-talk.
+
+**Prerequisites:** Stage 11 coordinator and provider tools, Groq STT/reasoning credentials, microphone permission, Twitch authorization, and OBS WebSocket on loopback.
+
+**Tasks:**
+
+1. Run local energy-based VAD in the isolated audio renderer with a bounded pre-roll, speech threshold, silence release, 30-second utterance cap, and no silence upload.
+2. Require the wake phrase 'Hi Obscur' outside a bounded conversation window; keep push-to-talk as an explicit fallback.
+3. Suppress capture while native TTS speaks, restore follow-up listening on completion, and expose listening/transcribing/reasoning/confirmation/speaking/error through typed IPC.
+4. Resolve spoken game names through Twitch category search and automatically provision isolated Starting Soon and Live scenes, countdown text, and fullscreen game capture in OBS.
+5. Persist the generated versioned profile, prepare an immutable plan, and obtain a separate spoken 'yes' or 'no' before starting output.
+6. Start the requested countdown only after confirmation, update its OBS text once per second, switch to the Live scene at zero, and verify both OBS and Twitch before declaring success.
+
+**Definition of Done:** static checks, unit tests, production build, preload-boundary E2E, hidden-audio shutdown E2E, and hosted tool-grant migration pass; background speech without the wake phrase is ignored; spoken confirmation cannot be self-approved by model output; microphone capture is suppressed during Pilot speech; a creator-observed dedicated-account run proves real microphone, OBS, and Twitch behavior.
 
 ## Stage 12 — Controlled learning and evaluation
 

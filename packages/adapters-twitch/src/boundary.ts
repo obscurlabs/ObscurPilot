@@ -8,6 +8,7 @@ import type {
 import { EventSubWsListener } from '@twurple/eventsub-ws';
 import type { ConnectionProjection } from '@obscurpilot/contracts/state';
 import { TwitchActivitySchema, type TwitchActivity } from '@obscurpilot/contracts/twitch';
+import type { ChatMessageProjection, TwitchMetadata } from '@obscurpilot/contracts/live-session';
 
 export const TWITCH_ADAPTER_PACKAGE = '@obscurpilot/adapters-twitch' as const;
 
@@ -127,7 +128,13 @@ function toTwurpleToken(token: DelegatedAccessToken): AccessTokenWithUserId {
 }
 
 function validateDelegatedToken(token: DelegatedAccessToken, userId: string, now: number): void {
-  if (token.userId !== userId || !/^[a-z0-9]{16,256}$/u.test(token.accessToken)) {
+  // OAuth bearer tokens are opaque. Validate the RFC 6750 b64token surface without
+  // narrowing Twitch credentials to a provider-specific lowercase alphabet.
+  if (
+    token.userId !== userId ||
+    !/^[A-Za-z0-9._~+/-]{16,256}=*$/u.test(token.accessToken) ||
+    token.accessToken.length > 256
+  ) {
     throw new TwitchAuthenticationError('Twitch returned an invalid delegated credential');
   }
   if (!Number.isFinite(Date.parse(token.expiresAt)) || Date.parse(token.expiresAt) <= now) {
@@ -207,6 +214,7 @@ export interface TwitchRuntimeOptions {
   readonly tokenBroker: TwitchTokenBroker;
   readonly onConnection: (projection: ConnectionProjection) => void;
   readonly onActivity: (activity: TwitchActivity) => void;
+  readonly onChatMessage?: (message: ChatMessageProjection) => void;
   readonly now?: () => number;
   readonly listenerFactory?: (apiClient: ApiClient) => EventSubWsListener;
 }
@@ -257,7 +265,7 @@ export class TwitchRuntime {
     this.started = true;
     this.emitConnection('authenticating', 'ACQUIRING_DELEGATED_ACCESS', 0);
     try {
-      await this.auth.getAccessTokenForUser(this.options.userId);
+      const token = await this.auth.getAccessTokenForUser(this.options.userId);
       const identity = await this.scheduler.schedule(() =>
         this.apiClient.users.getUserById(this.options.userId),
       );
@@ -301,6 +309,76 @@ export class TwitchRuntime {
           },
         }),
       );
+      if (token?.scope.includes('user:read:chat')) {
+        this.listener.onChannelChatMessage(this.options.userId, this.options.userId, (event) => {
+          if (!this.dedupe.accept('chat:' + event.messageId)) return;
+          this.options.onChatMessage?.({
+            messageId: event.messageId,
+            broadcasterId: event.broadcasterId,
+            userId: event.chatterId,
+            userLogin: event.chatterName.slice(0, 80),
+            userDisplayName: event.chatterDisplayName.slice(0, 80),
+            text: event.messageText.slice(0, 500),
+            occurredAt: new Date(this.now()).toISOString(),
+            roles: {
+              broadcaster: event.chatterId === event.broadcasterId,
+              moderator: event.hasBadge('moderator') || event.chatterId === event.broadcasterId,
+              subscriber: event.hasBadge('subscriber'),
+            },
+            links: 0,
+            mentions: 0,
+          });
+        });
+        this.listener.onChannelChatMessageDelete(
+          this.options.userId,
+          this.options.userId,
+          (event) =>
+            this.acceptActivity({
+              id: 'chat.delete:' + event.messageId,
+              type: 'channel.chat.message_delete',
+              occurredAt: new Date(this.now()).toISOString(),
+              summary: 'Chat message deleted',
+              metadata: {
+                broadcasterId: event.broadcasterId,
+                userId: event.userId,
+                messageId: event.messageId,
+              },
+            }),
+        );
+        this.listener.onChannelChatClearUserMessages(
+          this.options.userId,
+          this.options.userId,
+          (event) =>
+            this.acceptActivity({
+              id: fingerprint('chat.clear_user', event.userId, this.now()),
+              type: 'channel.chat.clear_user',
+              occurredAt: new Date(this.now()).toISOString(),
+              summary: 'User messages cleared',
+              metadata: { broadcasterId: event.broadcasterId, userId: event.userId },
+            }),
+        );
+      }
+      // Twurple's channel.ban v1 subscription requires the legacy channel:moderate
+      // scope. Mutation scopes such as moderator:manage:banned_users are not aliases.
+      if (token?.scope.includes('channel:moderate')) {
+        this.listener.onChannelBan(this.options.userId, (event) =>
+          this.acceptActivity({
+            id: fingerprint(
+              'channel.ban',
+              event.userId + ':' + event.startDate.toISOString(),
+              this.now(),
+            ),
+            type: 'channel.ban',
+            occurredAt: event.startDate.toISOString(),
+            summary: event.isPermanent ? 'User banned' : 'User timed out',
+            metadata: {
+              broadcasterId: event.broadcasterId,
+              userId: event.userId,
+              permanent: event.isPermanent,
+            },
+          }),
+        );
+      }
       this.listener.start();
     } catch (error: unknown) {
       this.started = false;
@@ -324,6 +402,124 @@ export class TwitchRuntime {
     this.started = false;
     this.listener.stop();
     this.emitConnection('stopped', 'STOPPED', 0);
+  }
+
+  public async getSessionPreflight(
+    categoryId: string,
+    categoryName: string,
+  ): Promise<{
+    readonly metadata: TwitchMetadata;
+    readonly scopes: readonly string[];
+    readonly categoryValid: boolean;
+    readonly live: boolean;
+  }> {
+    const token = await this.auth.getAccessTokenForUser(this.options.userId);
+    const [channel, game, stream] = await Promise.all([
+      this.scheduler.schedule(() =>
+        this.apiClient.channels.getChannelInfoById(this.options.userId),
+      ),
+      this.scheduler.schedule(() => this.apiClient.games.getGameById(categoryId)),
+      this.scheduler.schedule(() => this.apiClient.streams.getStreamByUserId(this.options.userId)),
+    ]);
+    if (channel === null) throw new TwitchAuthenticationError('Twitch channel was not found');
+    return {
+      metadata: {
+        title: channel.title.slice(0, 140),
+        categoryId: channel.gameId,
+        categoryName: channel.gameName.slice(0, 120),
+        tags: channel.tags.slice(0, 10),
+        language: channel.language,
+      },
+      scopes: token?.scope ?? [],
+      categoryValid:
+        game?.id === categoryId &&
+        game.name.localeCompare(categoryName, undefined, { sensitivity: 'accent' }) === 0,
+      live: stream !== null,
+    };
+  }
+
+  public async searchCategories(
+    query: string,
+  ): Promise<readonly { readonly id: string; readonly name: string }[]> {
+    const result = await this.scheduler.schedule(() =>
+      this.apiClient.search.searchCategories(query, { limit: 10 }),
+    );
+    return result.data.slice(0, 10).map((game) => ({ id: game.id, name: game.name }));
+  }
+
+  public updateMetadata(metadata: TwitchMetadata): Promise<void> {
+    return this.scheduler.schedule(() =>
+      this.apiClient.channels.updateChannelInfo(this.options.userId, {
+        title: metadata.title,
+        gameId: metadata.categoryId,
+        tags: [...metadata.tags],
+        language: metadata.language,
+      }),
+    );
+  }
+
+  public async isLive(): Promise<boolean> {
+    return (
+      (await this.scheduler.schedule(() =>
+        this.apiClient.streams.getStreamByUserId(this.options.userId),
+      )) !== null
+    );
+  }
+
+  public async resolveUser(
+    login: string,
+  ): Promise<
+    { readonly id: string; readonly login: string; readonly displayName: string } | undefined
+  > {
+    const user = await this.scheduler.schedule(() => this.apiClient.users.getUserByName(login));
+    return user === null
+      ? undefined
+      : { id: user.id, login: user.name, displayName: user.displayName };
+  }
+
+  public deleteMessage(messageId: string): Promise<void> {
+    return this.scheduler.schedule(() =>
+      this.apiClient.moderation.deleteChatMessages(this.options.userId, messageId),
+    );
+  }
+
+  public async timeoutUser(userId: string, duration: number, reason: string): Promise<void> {
+    await this.scheduler.schedule(() =>
+      this.apiClient.moderation.banUser(this.options.userId, { user: userId, duration, reason }),
+    );
+  }
+
+  public async banUser(userId: string, reason: string): Promise<void> {
+    await this.scheduler.schedule(() =>
+      this.apiClient.moderation.banUser(this.options.userId, { user: userId, reason }),
+    );
+  }
+
+  public unbanUser(userId: string): Promise<void> {
+    return this.scheduler.schedule(() =>
+      this.apiClient.moderation.unbanUser(this.options.userId, userId),
+    );
+  }
+
+  public blockUser(userId: string): Promise<void> {
+    return this.scheduler.schedule(() =>
+      this.apiClient.users.createBlock(this.options.userId, userId),
+    );
+  }
+
+  public unblockUser(userId: string): Promise<void> {
+    return this.scheduler.schedule(() =>
+      this.apiClient.users.deleteBlock(this.options.userId, userId),
+    );
+  }
+
+  public async sendMessage(message: string): Promise<string> {
+    const result = await this.scheduler.schedule(() =>
+      this.apiClient.chat.sendChatMessage(this.options.userId, message),
+    );
+    if (!result.isSent)
+      throw new Error(result.dropReasonMessage ?? 'Twitch rejected the chat message');
+    return result.id;
   }
 
   public acceptActivity(input: TwitchActivity): boolean {
@@ -362,6 +558,12 @@ function fingerprint(type: string, value: string, now: number): string {
 
 function classifyReason(error: unknown): string {
   const value = error instanceof Error ? error.message.toLowerCase() : '';
+  if (value.includes('twitch_token_invalid')) return 'TWITCH_TOKEN_INVALID';
+  if (value.includes('twitch_identity_mismatch')) return 'TWITCH_IDENTITY_MISMATCH';
+  if (value.includes('twitch_refresh_failed')) return 'TWITCH_REFRESH_FAILED';
+  if (value.includes('cloud_function_failed') || value === 'internal') {
+    return 'TWITCH_TOKEN_SERVICE_FAILED';
+  }
   if (value.includes('401') || value.includes('auth') || value.includes('token'))
     return 'AUTH_REQUIRED';
   if (value.includes('429') || value.includes('rate')) return 'RATE_LIMITED';

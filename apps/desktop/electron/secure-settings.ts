@@ -3,11 +3,31 @@ import { dirname } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { safeStorage } from 'electron';
 import { z } from 'zod';
+import { HandsFreePreferencesSchema } from '@obscurpilot/contracts/audio';
+import {
+  LiveSessionProfileV1Schema,
+  PilotOverlayPreferencesSchema,
+} from '@obscurpilot/contracts/live-session';
 
 const SettingsSchema = z
   .object({
     accelerator: z.string().min(1).max(64).default('CommandOrControl+Shift+Space'),
     audioDeviceId: z.string().min(1).max(512).default('default'),
+    handsFree: HandsFreePreferencesSchema.default({
+      enabled: true,
+      wakePhrase: 'Hi Obscur',
+      speechThreshold: 0.018,
+      silenceReleaseMs: 850,
+      conversationWindowMs: 300_000,
+    }),
+    pilotOverlay: PilotOverlayPreferencesSchema.default({
+      visible: true,
+      corner: 'bottom_right',
+      scale: 1,
+      clickThrough: true,
+    }),
+    liveSessionProfiles: z.array(LiveSessionProfileV1Schema).max(20).default([]),
+    activeLiveSessionProfileId: z.string().uuid().optional(),
   })
   .strict();
 export type SecureSettings = z.infer<typeof SettingsSchema>;

@@ -38,6 +38,10 @@ async function expectNarrowRendererBoundary(page: Page): Promise<void> {
       'listAudioDevices',
       'selectAudioDevice',
       'onPttChanged',
+      'getHandsFreeProjection',
+      'setHandsFreePreferences',
+      'finishHandsFreeSpeech',
+      'onHandsFreeChanged',
       'getAgentInteraction',
       'decideAgentConfirmation',
       'onAgentInteractionChanged',
@@ -53,13 +57,26 @@ async function expectNarrowRendererBoundary(page: Page): Promise<void> {
       'connectTwitch',
       'disconnectTwitch',
       'reconnectTwitch',
+      'searchTwitchCategories',
       'onTwitchActivity',
+      'getLiveSession',
+      'getLiveSessionProfiles',
+      'prepareLiveSession',
+      'decideLiveSession',
+      'stopLiveSession',
+      'emergencyStopLiveSession',
+      'executeModeration',
+      'onLiveSessionChanged',
+      'onChatMessage',
+      'onChatAnalysis',
+      'getPilotOverlayPreferences',
+      'setPilotOverlayPreferences',
     ],
     requireType: 'undefined',
     processType: 'undefined',
   });
 
-  await expect(page.getByText('Stage 10 · Complete')).toBeVisible();
+  await expect(page.getByText('Stage 11.1 · Hands-free ready')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Control board sections' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Command', exact: true })).toHaveAttribute(
     'aria-current',
@@ -174,6 +191,42 @@ test('production renderer starts behind the narrow preload boundary', async () =
     await expect(page.locator('.skip-link')).toBeFocused();
   } finally {
     await electronApplication.close();
+  }
+});
+
+test('closing the control board shuts down the hidden audio runtime', async () => {
+  const require = createRequire(import.meta.url);
+  const electronPath: unknown = require('electron');
+  if (typeof electronPath !== 'string') {
+    throw new Error('Pinned Electron executable could not be resolved');
+  }
+
+  const electronApplication = await electron.launch({
+    args: [resolve('apps/desktop')],
+    executablePath: electronPath,
+    env: {
+      ...process.env,
+      OBSCURPILOT_E2E: '1',
+    },
+  });
+  let exited = false;
+  try {
+    const mainWindow = await getMainWindow(electronApplication);
+    const processExited = new Promise<void>((resolveExit, rejectExit) => {
+      const timer = setTimeout(
+        () => rejectExit(new Error('Electron did not exit after the main window closed')),
+        8_000,
+      );
+      electronApplication.process().once('exit', () => {
+        clearTimeout(timer);
+        exited = true;
+        resolveExit();
+      });
+    });
+    await mainWindow.close();
+    await processExited;
+  } finally {
+    if (!exited) await electronApplication.close();
   }
 });
 

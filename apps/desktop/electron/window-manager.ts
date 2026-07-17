@@ -1,18 +1,16 @@
 import { resolve } from 'node:path';
-import { BrowserWindow, session } from 'electron';
+import { BrowserWindow, screen, session } from 'electron';
+import type { PilotOverlayPreferences } from '@obscurpilot/contracts/live-session';
 import { registerApplicationProtocol } from './application-protocol.js';
 
-export async function createMainWindow(
-  isDevelopment: boolean,
-  developmentServerUrl: URL,
-): Promise<BrowserWindow> {
+export function createMainWindowShell(isDevelopment: boolean): BrowserWindow {
   const window = new BrowserWindow({
     width: 1180,
     height: 760,
     minWidth: 900,
     minHeight: 620,
-    show: false,
-    title: 'ObscurPilot',
+    show: true,
+    title: 'ObscurPilot — Starting secure runtime…',
     backgroundColor: '#09090b',
     webPreferences: {
       contextIsolation: true,
@@ -36,9 +34,24 @@ export async function createMainWindow(
       window.webContents.closeDevTools();
     });
   }
-  window.once('ready-to-show', () => {
-    window.show();
+  window.webContents.on('did-fail-load', (_event, code, description, validatedUrl) => {
+    window.setTitle('ObscurPilot — Interface unavailable');
+    console.error('ObscurPilot renderer load failed:', code, description, validatedUrl);
   });
+  window.webContents.on('render-process-gone', (_event, details) => {
+    window.setTitle('ObscurPilot — Renderer stopped');
+    console.error('ObscurPilot renderer stopped:', details.reason);
+  });
+  window.setProgressBar(2, { mode: 'indeterminate' });
+  return window;
+}
+
+export async function loadMainWindow(
+  window: BrowserWindow,
+  isDevelopment: boolean,
+  developmentServerUrl: URL,
+): Promise<void> {
+  if (window.isDestroyed()) throw new Error('Main window was closed during startup');
 
   if (isDevelopment) {
     await window.loadURL(developmentServerUrl.href);
@@ -46,6 +59,18 @@ export async function createMainWindow(
     await window.loadURL('app://bundle/index.html');
   }
 
+  window.setProgressBar(-1);
+  window.setTitle('ObscurPilot');
+  if (!window.isVisible()) window.show();
+  window.focus();
+}
+
+export async function createMainWindow(
+  isDevelopment: boolean,
+  developmentServerUrl: URL,
+): Promise<BrowserWindow> {
+  const window = createMainWindowShell(isDevelopment);
+  await loadMainWindow(window, isDevelopment, developmentServerUrl);
   return window;
 }
 
@@ -78,7 +103,7 @@ export async function createAudioCaptureWindow(
         ...details.responseHeaders,
         'Content-Security-Policy': [
           isDevelopment
-            ? "default-src 'self'; script-src 'self'; connect-src 'self' " +
+            ? "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' " +
               developmentServerUrl.origin +
               " ws://127.0.0.1:5173; object-src 'none'"
             : "default-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'",
@@ -96,4 +121,65 @@ export async function createAudioCaptureWindow(
     await captureWindow.loadURL('app://bundle/audio-capture.html');
   }
   return captureWindow;
+}
+
+export async function createPilotOverlayWindow(
+  isDevelopment: boolean,
+  developmentServerUrl: URL,
+  preferences: PilotOverlayPreferences,
+): Promise<BrowserWindow> {
+  const window = new BrowserWindow({
+    width: Math.round(288 * preferences.scale),
+    height: Math.round(172 * preferences.scale),
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    focusable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      contextIsolation: true,
+      devTools: isDevelopment,
+      nodeIntegration: false,
+      preload: resolve(__dirname, 'preload.cjs'),
+      sandbox: true,
+      webSecurity: true,
+    },
+  });
+  window.setAlwaysOnTop(true, 'screen-saver');
+  window.setContentProtection(true);
+  window.setIgnoreMouseEvents(preferences.clickThrough, { forward: true });
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event) => event.preventDefault());
+  if (!isDevelopment) {
+    window.webContents.on('devtools-opened', () => window.webContents.closeDevTools());
+  }
+  if (isDevelopment) {
+    await window.loadURL(new URL('/overlay.html', developmentServerUrl).href);
+  } else {
+    await window.loadURL('app://bundle/overlay.html');
+  }
+  applyPilotOverlayPreferences(window, preferences);
+  return window;
+}
+
+export function applyPilotOverlayPreferences(
+  window: BrowserWindow,
+  preferences: PilotOverlayPreferences,
+): void {
+  if (window.isDestroyed()) return;
+  const width = Math.round(288 * preferences.scale);
+  const height = Math.round(172 * preferences.scale);
+  const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea;
+  const margin = 18;
+  const left = preferences.corner.endsWith('left') ? x + margin : x + workWidth - width - margin;
+  const top = preferences.corner.startsWith('top') ? y + margin : y + workHeight - height - margin;
+  window.setBounds({ x: left, y: top, width, height }, false);
+  window.setIgnoreMouseEvents(preferences.clickThrough, { forward: true });
+  if (preferences.visible) window.showInactive();
+  else window.hide();
 }

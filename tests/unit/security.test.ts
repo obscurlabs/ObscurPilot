@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Session } from 'electron';
 import {
+  getContentSecurityPolicy,
   installPermissionDenial,
   isTrustedRendererUrl,
 } from '../../apps/desktop/electron/security';
@@ -20,6 +21,16 @@ describe('renderer sender validation', () => {
     expect(
       isTrustedRendererUrl('http://127.0.0.1:5174/settings', true, 'http://127.0.0.1:5173'),
     ).toBe(false);
+  });
+
+  it('allows the Vite refresh preamble only in development', () => {
+    const development = getContentSecurityPolicy(true, 'http://127.0.0.1:5173');
+    const production = getContentSecurityPolicy(false, 'http://127.0.0.1:5173');
+
+    expect(development).toContain("script-src 'self' 'unsafe-inline'");
+    expect(development).toContain('http://127.0.0.1:5173');
+    expect(production).toContain("script-src 'self'");
+    expect(production).not.toContain("'unsafe-inline'");
   });
 
   it('denies renderer permission checks and requests by default', () => {

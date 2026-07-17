@@ -16,6 +16,7 @@
     "apps/desktop/electron/cloud-outbox.ts",
     "apps/desktop/electron/twitch-bridge.ts",
     "apps/desktop/electron/voice-orchestrator.ts",
+    "apps/desktop/electron/hands-free-conversation.ts",
     "apps/desktop/electron/ipc-router.ts",
     "apps/desktop/electron/lifecycle.ts",
     "apps/desktop/electron/preload-api.ts",

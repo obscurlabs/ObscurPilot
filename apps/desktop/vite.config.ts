@@ -13,6 +13,7 @@ export default defineConfig({
       input: {
         main: resolve(import.meta.dirname, 'index.html'),
         audioCapture: resolve(import.meta.dirname, 'audio-capture.html'),
+        overlay: resolve(import.meta.dirname, 'overlay.html'),
       },
     },
   },

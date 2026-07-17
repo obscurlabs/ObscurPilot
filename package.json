@@ -15,6 +15,7 @@
     "packages/*"
   ],
   "scripts": {
+    "start": "npm run build && npm --workspace @obscurpilot/desktop run start",
     "dev": "npm run build:types && npm --workspace @obscurpilot/desktop run dev",
     "build": "npm run build:types && npm --workspace @obscurpilot/desktop run build",
     "build:types": "tsc -b --pretty false",

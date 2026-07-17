@@ -13,6 +13,7 @@ import { LoopLimitError } from '@obscurpilot/domain/loop-controller';
 import { PolicyDeniedError } from '@obscurpilot/domain/policy';
 import { ObsBridgeError } from '@obscurpilot/adapters-obs/boundary';
 import { ZodError } from 'zod';
+import type { VoiceCaptureSource } from '@obscurpilot/contracts/audio';
 
 export interface VoiceOrchestratorOptions {
   readonly transcription: GroqTranscriptionAdapter;
@@ -20,7 +21,11 @@ export interface VoiceOrchestratorOptions {
   readonly onConnection: (projection: ConnectionProjection) => void;
   readonly onTranscript?: (
     result: TranscriptionResult,
-    context: { readonly correlationId: string; readonly signal: AbortSignal },
+    context: {
+      readonly correlationId: string;
+      readonly signal: AbortSignal;
+      readonly source: VoiceCaptureSource;
+    },
   ) => Promise<void>;
   readonly now?: () => number;
   readonly id?: () => string;
@@ -61,8 +66,15 @@ export class VoiceOrchestrator {
     return this.projectionValue;
   }
 
-  public async processClip(clip: EncodedAudioClip): Promise<void> {
+  public async processClip(
+    clip: EncodedAudioClip,
+    source: VoiceCaptureSource = 'ptt',
+  ): Promise<void> {
     if (this.disposed) return;
+    if (this.pendingConfirmation !== undefined && source === 'hands_free') {
+      await this.processConfirmationClip(clip);
+      return;
+    }
     this.cancel('SUPERSEDED');
     const correlationId = this.id();
     const active = {
@@ -90,6 +102,7 @@ export class VoiceOrchestrator {
         await this.transcriptHandler(result, {
           correlationId,
           signal: active.abort.signal,
+          source,
         });
       } else if (this.active === active) {
         this.publish({
@@ -157,12 +170,12 @@ export class VoiceOrchestrator {
     }
     this.pendingConfirmation?.settle(false, 'CONFIRMATION_SUPERSEDED');
     const confirmationId = this.id();
-    const expiresAtMs = this.now() + 15_000;
+    const expiresAtMs = this.now() + 45_000;
     request.pauseDeadline();
     return new Promise<boolean>((resolve) => {
       let settled = false;
       const onAbort = () => settle(false, 'CONFIRMATION_CANCELLED');
-      const timer = setTimeout(() => settle(false, 'CONFIRMATION_EXPIRED'), 15_000);
+      const timer = setTimeout(() => settle(false, 'CONFIRMATION_EXPIRED'), 45_000);
       timer.unref?.();
       const settle = (approved: boolean, reasonCode: string) => {
         if (settled) return;
@@ -236,6 +249,31 @@ export class VoiceOrchestrator {
     this.cancel('SHUTDOWN');
   }
 
+  private async processConfirmationClip(clip: EncodedAudioClip): Promise<void> {
+    const pending = this.pendingConfirmation;
+    const active = this.active;
+    if (pending === undefined || active === undefined) {
+      clip.bytes.fill(0);
+      return;
+    }
+    try {
+      const result = await this.options.transcription.transcribe(
+        clip,
+        pending.correlationId,
+        active.abort.signal,
+      );
+      const decision = parseSpokenDecision(result.text);
+      if (decision !== undefined && this.pendingConfirmation === pending) {
+        pending.settle(
+          decision,
+          decision ? 'VOICE_CONFIRMATION_APPROVED' : 'VOICE_CONFIRMATION_DENIED',
+        );
+      }
+    } finally {
+      clip.bytes.fill(0);
+    }
+  }
+
   private elapsed(active: { readonly startedAt: number }): number {
     return Math.max(0, this.now() - active.startedAt);
   }
@@ -259,6 +297,23 @@ export class VoiceOrchestrator {
       correlationId,
     });
   }
+}
+
+function parseSpokenDecision(text: string): boolean | undefined {
+  const normalized = text
+    .toLocaleLowerCase('en-US')
+    .replace(/[^a-z ]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  if (
+    /^(yes|yes please|approve|approved|confirm|go ahead|do it|start|start it)$/u.test(normalized)
+  ) {
+    return true;
+  }
+  if (/^(no|no thanks|deny|denied|cancel|stop|do not start|don't start)$/u.test(normalized)) {
+    return false;
+  }
+  return undefined;
 }
 
 function connectionPhaseFor(error: GroqAdapterError): ConnectionProjection['phase'] {

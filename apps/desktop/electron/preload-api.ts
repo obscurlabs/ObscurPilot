@@ -5,12 +5,18 @@ import {
 import {
   AudioDeviceListSchema,
   EmptyPayloadSchema,
+  HandsFreeChangedEventSchema,
+  HandsFreePreferencesSchema,
+  HandsFreeProjectionSchema,
+  HandsFreeSpeechFinishedPayloadSchema,
   OperationAcceptedSchema,
   PttChangedEventSchema,
   PttCommandPayloadSchema,
   SelectAudioDevicePayloadSchema,
   SetPttAcceleratorPayloadSchema,
   type PttProjection,
+  type HandsFreePreferences,
+  type HandsFreeProjection,
 } from '@obscurpilot/contracts/audio';
 import {
   createResultEnvelopeSchema,
@@ -41,6 +47,8 @@ import {
 } from '@obscurpilot/contracts/cloud';
 import {
   TwitchActivityEventSchema,
+  TwitchCategorySearchPayloadSchema,
+  TwitchCategorySearchResultSchema,
   TwitchEmptyPayloadSchema,
   TwitchOperationAcceptedSchema,
   TwitchProjectionSchema,
@@ -54,6 +62,28 @@ import {
   type AgentConfirmationDecisionPayload,
   type AgentInteractionProjection,
 } from '@obscurpilot/contracts/agent';
+import {
+  ChatAnalysisEventSchema,
+  ChatMessageEventSchema,
+  LiveSessionChangedEventSchema,
+  LiveSessionDecisionPayloadSchema,
+  LiveSessionEmptyPayloadSchema,
+  LiveSessionProfileV1Schema,
+  LiveSessionProfilesProjectionSchema,
+  LiveSessionProjectionSchema,
+  LiveSessionModeSchema,
+  ModerationCommandPayloadSchema,
+  PilotOverlayPreferencesSchema,
+  PrepareLiveSessionPayloadSchema,
+  type ChatAnalysisProjection,
+  type ChatMessageProjection,
+  type LiveSessionDecisionPayload,
+  type LiveSessionMode,
+  type LiveSessionProfileV1,
+  type LiveSessionProjection,
+  type ModerationIntentV1,
+  type PilotOverlayPreferences,
+} from '@obscurpilot/contracts/live-session';
 
 interface RendererIpc {
   invoke(channel: string, request: unknown): Promise<unknown>;
@@ -141,6 +171,40 @@ export function createRendererApi(ipc: RendererIpc): Readonly<ObscurPilotRendere
         if (!subscribed) return;
         subscribed = false;
         ipc.removeListener(IPC_CHANNELS.pttChanged, wrapped);
+      };
+    },
+    getHandsFreeProjection: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.handsFreeGetProjection,
+        EmptyPayloadSchema.parse({}),
+        HandsFreeProjectionSchema,
+      ),
+    setHandsFreePreferences: (preferences: HandsFreePreferences) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.handsFreeSetPreferences,
+        HandsFreePreferencesSchema.parse(preferences),
+        HandsFreeProjectionSchema,
+      ),
+    finishHandsFreeSpeech: (speechId: string) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.handsFreeSpeechFinished,
+        HandsFreeSpeechFinishedPayloadSchema.parse({ speechId }),
+        HandsFreeProjectionSchema,
+      ),
+    onHandsFreeChanged: (listener: (projection: Readonly<HandsFreeProjection>) => void) => {
+      let subscribed = true;
+      const wrapped = (_event: unknown, rawEnvelope: unknown) => {
+        const envelope = HandsFreeChangedEventSchema.parse(rawEnvelope);
+        listener(envelope.payload);
+      };
+      ipc.on(IPC_CHANNELS.handsFreeChanged, wrapped);
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        ipc.removeListener(IPC_CHANNELS.handsFreeChanged, wrapped);
       };
     },
     getAgentInteraction: () =>
@@ -256,6 +320,13 @@ export function createRendererApi(ipc: RendererIpc): Readonly<ObscurPilotRendere
         TwitchEmptyPayloadSchema.parse({}),
         TwitchOperationAcceptedSchema,
       ),
+    searchTwitchCategories: (query: string) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.twitchCategorySearch,
+        TwitchCategorySearchPayloadSchema.parse({ query }),
+        TwitchCategorySearchResultSchema,
+      ),
     onTwitchActivity: (listener: (activity: Readonly<TwitchActivity>) => void) => {
       let subscribed = true;
       const wrapped = (_event: unknown, rawEnvelope: unknown) => {
@@ -269,7 +340,96 @@ export function createRendererApi(ipc: RendererIpc): Readonly<ObscurPilotRendere
         ipc.removeListener(IPC_CHANNELS.twitchActivity, wrapped);
       };
     },
+    getLiveSession: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.liveSessionGetProjection,
+        LiveSessionEmptyPayloadSchema.parse({}),
+        LiveSessionProjectionSchema,
+      ),
+    getLiveSessionProfiles: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.liveSessionGetProfiles,
+        LiveSessionEmptyPayloadSchema.parse({}),
+        LiveSessionProfilesProjectionSchema,
+      ),
+    prepareLiveSession: (profile: LiveSessionProfileV1, mode: LiveSessionMode) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.liveSessionPrepare,
+        PrepareLiveSessionPayloadSchema.parse({
+          profile: LiveSessionProfileV1Schema.parse(profile),
+          mode: LiveSessionModeSchema.parse(mode),
+        }),
+        LiveSessionProjectionSchema,
+      ),
+    decideLiveSession: (payload: LiveSessionDecisionPayload) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.liveSessionDecision,
+        LiveSessionDecisionPayloadSchema.parse(payload),
+        LiveSessionProjectionSchema,
+      ),
+    stopLiveSession: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.liveSessionStop,
+        LiveSessionEmptyPayloadSchema.parse({}),
+        LiveSessionProjectionSchema,
+      ),
+    emergencyStopLiveSession: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.liveSessionEmergencyStop,
+        LiveSessionEmptyPayloadSchema.parse({}),
+        LiveSessionProjectionSchema,
+      ),
+    executeModeration: (intent: ModerationIntentV1, confirmed: boolean) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.moderationExecute,
+        ModerationCommandPayloadSchema.parse({ intent, confirmed }),
+        TwitchOperationAcceptedSchema,
+      ),
+    onLiveSessionChanged: (listener: (projection: Readonly<LiveSessionProjection>) => void) =>
+      subscribe(ipc, IPC_CHANNELS.liveSessionChanged, LiveSessionChangedEventSchema, listener),
+    onChatMessage: (listener: (message: Readonly<ChatMessageProjection>) => void) =>
+      subscribe(ipc, IPC_CHANNELS.chatMessage, ChatMessageEventSchema, listener),
+    onChatAnalysis: (listener: (analysis: Readonly<ChatAnalysisProjection>) => void) =>
+      subscribe(ipc, IPC_CHANNELS.chatAnalysis, ChatAnalysisEventSchema, listener),
+    getPilotOverlayPreferences: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.pilotOverlayGetPreferences,
+        LiveSessionEmptyPayloadSchema.parse({}),
+        PilotOverlayPreferencesSchema,
+      ),
+    setPilotOverlayPreferences: (preferences: PilotOverlayPreferences) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.pilotOverlaySetPreferences,
+        PilotOverlayPreferencesSchema.parse(preferences),
+        PilotOverlayPreferencesSchema,
+      ),
   });
+}
+
+function subscribe<T>(
+  ipc: RendererIpc,
+  channel: string,
+  schema: ZodType<{ readonly payload: T }>,
+  listener: (payload: Readonly<T>) => void,
+): () => void {
+  let subscribed = true;
+  const wrapped = (_event: unknown, rawEnvelope: unknown) =>
+    listener(schema.parse(rawEnvelope).payload);
+  ipc.on(channel, wrapped);
+  return () => {
+    if (!subscribed) return;
+    subscribed = false;
+    ipc.removeListener(channel, wrapped);
+  };
 }
 
 async function invoke<Input, Output>(

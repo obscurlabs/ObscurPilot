@@ -14556,6 +14556,10 @@ var IPC_CHANNELS = {
   audioListDevices: "audio:list-devices:v1",
   audioSelectDevice: "audio:select-device:v1",
   pttChanged: "audio:ptt-changed:v1",
+  handsFreeGetProjection: "audio:hands-free-get:v1",
+  handsFreeSetPreferences: "audio:hands-free-set:v1",
+  handsFreeSpeechFinished: "audio:hands-free-speech-finished:v1",
+  handsFreeChanged: "audio:hands-free-changed:v1",
   agentGetProjection: "agent:get-projection:v1",
   agentConfirmationDecision: "agent:confirmation-decision:v1",
   agentInteractionChanged: "agent:interaction-changed:v1",
@@ -14571,7 +14575,20 @@ var IPC_CHANNELS = {
   twitchConnect: "twitch:connect:v1",
   twitchDisconnect: "twitch:disconnect:v1",
   twitchReconnect: "twitch:reconnect:v1",
-  twitchActivity: "twitch:activity:v1"
+  twitchCategorySearch: "twitch:category-search:v1",
+  twitchActivity: "twitch:activity:v1",
+  liveSessionGetProjection: "live-session:get-projection:v1",
+  liveSessionGetProfiles: "live-session:get-profiles:v1",
+  liveSessionPrepare: "live-session:prepare:v1",
+  liveSessionDecision: "live-session:decision:v1",
+  liveSessionStop: "live-session:stop:v1",
+  liveSessionEmergencyStop: "live-session:emergency-stop:v1",
+  liveSessionChanged: "live-session:changed:v1",
+  moderationExecute: "moderation:execute:v1",
+  chatMessage: "chat:message:v1",
+  chatAnalysis: "chat:analysis:v1",
+  pilotOverlayGetPreferences: "pilot-overlay:get-preferences:v1",
+  pilotOverlaySetPreferences: "pilot-overlay:set-preferences:v1"
 };
 var RequestMetadataSchema = external_exports.object({
   protocolVersion: external_exports.literal(IPC_PROTOCOL_VERSION),
@@ -14663,6 +14680,37 @@ var SelectAudioDevicePayloadSchema = external_exports.object({ deviceId: externa
 var EmptyPayloadSchema = external_exports.object({}).strict();
 var OperationAcceptedSchema = external_exports.object({ accepted: external_exports.literal(true) }).strict();
 var PttChangedEventSchema = createEventEnvelopeSchema(PttProjectionSchema);
+var HandsFreePreferencesSchema = external_exports.object({
+  enabled: external_exports.boolean(),
+  wakePhrase: external_exports.string().trim().min(2).max(32),
+  speechThreshold: external_exports.number().min(5e-3).max(0.25),
+  silenceReleaseMs: external_exports.number().int().min(350).max(3e3),
+  conversationWindowMs: external_exports.number().int().min(15e3).max(9e5)
+}).strict();
+var HandsFreePhaseSchema = external_exports.enum([
+  "disabled",
+  "arming",
+  "standby",
+  "listening",
+  "transcribing",
+  "reasoning",
+  "awaiting_confirmation",
+  "speaking",
+  "paused",
+  "error"
+]);
+var HandsFreeProjectionSchema = external_exports.object({
+  phase: HandsFreePhaseSchema,
+  reasonCode: external_exports.string().min(1).max(96),
+  enabled: external_exports.boolean(),
+  wakePhrase: external_exports.string().min(2).max(32),
+  level: external_exports.number().min(0).max(1),
+  sessionActive: external_exports.boolean(),
+  sessionExpiresAt: external_exports.string().datetime({ offset: true }).optional(),
+  speech: external_exports.object({ id: external_exports.string().uuid(), text: external_exports.string().trim().min(1).max(1e3) }).strict().optional()
+}).strict();
+var HandsFreeSpeechFinishedPayloadSchema = external_exports.object({ speechId: external_exports.string().uuid() }).strict();
+var HandsFreeChangedEventSchema = createEventEnvelopeSchema(HandsFreeProjectionSchema);
 
 // ../../packages/contracts/dist/state.js
 var ConnectionProviderSchema = external_exports.enum(["obs", "twitch", "groq", "supabase"]);
@@ -14813,11 +14861,21 @@ var TwitchProjectionSchema = external_exports.object({
 }).strict();
 var TwitchActivitySchema = external_exports.object({
   id: external_exports.string().min(1).max(256),
-  type: external_exports.enum(["stream.online", "stream.offline", "channel.update"]),
+  type: external_exports.enum([
+    "stream.online",
+    "stream.offline",
+    "channel.update",
+    "channel.chat.message_delete",
+    "channel.chat.clear_user",
+    "channel.ban"
+  ]),
   occurredAt: external_exports.string().datetime({ offset: true }),
   summary: external_exports.string().min(1).max(500),
   metadata: external_exports.record(external_exports.string(), external_exports.union([external_exports.string(), external_exports.number(), external_exports.boolean()]))
 }).strict();
+var TwitchCategorySchema = external_exports.object({ id: external_exports.string().regex(/^\d{1,32}$/u), name: external_exports.string().min(1).max(120) }).strict();
+var TwitchCategorySearchPayloadSchema = external_exports.object({ query: external_exports.string().trim().min(1).max(120) }).strict();
+var TwitchCategorySearchResultSchema = external_exports.object({ categories: external_exports.array(TwitchCategorySchema).max(10) }).strict();
 var TwitchEmptyPayloadSchema = external_exports.object({}).strict();
 var TwitchOperationAcceptedSchema = external_exports.object({ accepted: external_exports.literal(true) }).strict();
 var TwitchActivityEventSchema = createEventEnvelopeSchema(TwitchActivitySchema);
@@ -14859,6 +14917,152 @@ var AgentConfirmationDecisionPayloadSchema = external_exports.object({
   decision: external_exports.enum(["approve", "deny"])
 }).strict();
 var AgentInteractionChangedEventSchema = createEventEnvelopeSchema(AgentInteractionProjectionSchema);
+
+// ../../packages/contracts/dist/live-session.js
+var LiveSessionModeSchema = external_exports.enum(["dry_run", "live"]);
+var LiveSessionProfileV1Schema = external_exports.object({
+  schemaVersion: external_exports.literal(1),
+  profileId: external_exports.string().uuid(),
+  revision: external_exports.number().int().positive(),
+  name: external_exports.string().trim().min(1).max(80),
+  twitch: external_exports.object({
+    title: external_exports.string().trim().min(1).max(140),
+    categoryId: external_exports.string().regex(/^\d{1,32}$/u),
+    categoryName: external_exports.string().trim().min(1).max(120),
+    tags: external_exports.array(external_exports.string().trim().min(1).max(25)).max(10),
+    language: external_exports.string().regex(/^[a-z]{2}$/u)
+  }).strict(),
+  obs: external_exports.object({
+    sceneCollectionName: external_exports.string().trim().min(1).max(512),
+    preLiveSceneName: external_exports.string().trim().min(1).max(512),
+    liveSceneName: external_exports.string().trim().min(1).max(512),
+    requiredInputs: external_exports.array(external_exports.string().trim().min(1).max(512)).max(100),
+    countdownSeconds: external_exports.number().int().min(0).max(3600),
+    countdownInputName: external_exports.string().trim().min(1).max(512).optional(),
+    recording: external_exports.enum(["off", "on"])
+  }).strict(),
+  verification: external_exports.object({
+    obsReadyTimeoutMs: external_exports.number().int().min(1e3).max(6e4),
+    twitchLiveTimeoutMs: external_exports.number().int().min(5e3).max(18e4)
+  }).strict()
+}).strict();
+var LiveSessionStepSchema = external_exports.enum([
+  "preflight",
+  "apply_twitch",
+  "prepare_obs",
+  "start_output",
+  "verify_live"
+]);
+var TwitchMetadataSchema = external_exports.object({
+  title: external_exports.string().max(140),
+  categoryId: external_exports.string().max(32),
+  categoryName: external_exports.string().max(120),
+  tags: external_exports.array(external_exports.string().max(25)).max(10),
+  language: external_exports.string().max(16)
+}).strict();
+var LiveSessionPlanV1Schema = external_exports.object({
+  schemaVersion: external_exports.literal(1),
+  planId: external_exports.string().uuid(),
+  planHash: external_exports.string().regex(/^[a-f0-9]{64}$/u),
+  mode: LiveSessionModeSchema,
+  profileId: external_exports.string().uuid(),
+  profileRevision: external_exports.number().int().positive(),
+  profileName: external_exports.string().min(1).max(80),
+  createdAt: external_exports.string().datetime({ offset: true }),
+  expiresAt: external_exports.string().datetime({ offset: true }),
+  expectedObsSnapshotVersion: external_exports.number().int().nonnegative(),
+  expectedObsGeneration: external_exports.number().int().nonnegative(),
+  previousTwitch: TwitchMetadataSchema,
+  plannedTwitch: TwitchMetadataSchema,
+  preLiveSceneName: external_exports.string().min(1).max(512),
+  liveSceneName: external_exports.string().min(1).max(512),
+  countdownSeconds: external_exports.number().int().min(0).max(3600),
+  recording: external_exports.enum(["off", "on"]),
+  requiredScopes: external_exports.array(external_exports.string().min(1).max(128)).max(16),
+  steps: external_exports.array(LiveSessionStepSchema).length(5)
+}).strict();
+var LiveSessionPhaseSchema = external_exports.enum([
+  "draft",
+  "preflight",
+  "awaiting_confirmation",
+  "applying_twitch",
+  "preparing_obs",
+  "starting_output",
+  "verifying_live",
+  "live",
+  "rolling_back",
+  "failed",
+  "stopping",
+  "stopped"
+]);
+var LiveSessionProjectionSchema = external_exports.object({
+  phase: LiveSessionPhaseSchema,
+  reasonCode: external_exports.string().min(1).max(96),
+  updatedAt: external_exports.string().datetime({ offset: true }),
+  plan: LiveSessionPlanV1Schema.optional(),
+  activeStep: LiveSessionStepSchema.optional(),
+  completedSteps: external_exports.array(LiveSessionStepSchema).max(5),
+  countdownRemainingSeconds: external_exports.number().int().nonnegative().optional(),
+  obsStreamActive: external_exports.boolean(),
+  twitchLive: external_exports.boolean(),
+  liveVerified: external_exports.boolean()
+}).strict();
+var ChatMessageProjectionSchema = external_exports.object({
+  messageId: external_exports.string().min(1).max(256),
+  broadcasterId: external_exports.string().min(1).max(128),
+  userId: external_exports.string().min(1).max(128),
+  userLogin: external_exports.string().min(1).max(80),
+  userDisplayName: external_exports.string().min(1).max(80),
+  text: external_exports.string().max(500),
+  occurredAt: external_exports.string().datetime({ offset: true }),
+  roles: external_exports.object({ broadcaster: external_exports.boolean(), moderator: external_exports.boolean(), subscriber: external_exports.boolean() }).strict(),
+  links: external_exports.number().int().nonnegative().max(32),
+  mentions: external_exports.number().int().nonnegative().max(64)
+}).strict();
+var ChatAnalysisProjectionSchema = external_exports.object({
+  messageId: external_exports.string().min(1).max(256),
+  reasonCodes: external_exports.array(external_exports.string().min(1).max(96)).max(16),
+  confidence: external_exports.number().min(0).max(1),
+  severity: external_exports.enum(["none", "low", "medium", "high"]),
+  suggestedAction: external_exports.enum(["none", "delete", "timeout", "ban", "block"]),
+  analyzedAt: external_exports.string().datetime({ offset: true })
+}).strict();
+var ModerationIntentV1Schema = external_exports.object({
+  schemaVersion: external_exports.literal(1),
+  intentId: external_exports.string().uuid(),
+  action: external_exports.enum([
+    "delete_message",
+    "timeout_user",
+    "ban_user",
+    "unban_user",
+    "block_user",
+    "unblock_user"
+  ]),
+  targetUserId: external_exports.string().min(1).max(128),
+  targetLogin: external_exports.string().min(1).max(80),
+  messageId: external_exports.string().min(1).max(256).optional(),
+  durationSeconds: external_exports.number().int().min(1).max(1209600).optional(),
+  reason: external_exports.string().trim().min(1).max(500),
+  evidenceMessageId: external_exports.string().min(1).max(256).optional()
+}).strict();
+var PilotOverlayPreferencesSchema = external_exports.object({
+  visible: external_exports.boolean(),
+  corner: external_exports.enum(["top_left", "top_right", "bottom_left", "bottom_right"]),
+  scale: external_exports.number().min(0.75).max(1.5),
+  clickThrough: external_exports.boolean()
+}).strict();
+var PrepareLiveSessionPayloadSchema = external_exports.object({ profile: LiveSessionProfileV1Schema, mode: LiveSessionModeSchema }).strict();
+var LiveSessionDecisionPayloadSchema = external_exports.object({ planId: external_exports.string().uuid(), decision: external_exports.enum(["approve", "deny"]) }).strict();
+var LiveSessionEmptyPayloadSchema = external_exports.object({}).strict();
+var LiveSessionProfilesProjectionSchema = external_exports.object({
+  profiles: external_exports.array(LiveSessionProfileV1Schema).max(20),
+  activeProfileId: external_exports.string().uuid().optional()
+}).strict();
+var LiveSessionOperationAcceptedSchema = external_exports.object({ accepted: external_exports.literal(true) }).strict();
+var ModerationCommandPayloadSchema = external_exports.object({ intent: ModerationIntentV1Schema, confirmed: external_exports.boolean() }).strict();
+var LiveSessionChangedEventSchema = createEventEnvelopeSchema(LiveSessionProjectionSchema);
+var ChatMessageEventSchema = createEventEnvelopeSchema(ChatMessageProjectionSchema);
+var ChatAnalysisEventSchema = createEventEnvelopeSchema(ChatAnalysisProjectionSchema);
 
 // electron/preload-api.ts
 var RendererIpcError = class extends Error {
@@ -14935,6 +15139,37 @@ function createRendererApi(ipc) {
         if (!subscribed) return;
         subscribed = false;
         ipc.removeListener(IPC_CHANNELS.pttChanged, wrapped);
+      };
+    },
+    getHandsFreeProjection: () => invoke(
+      ipc,
+      IPC_CHANNELS.handsFreeGetProjection,
+      EmptyPayloadSchema.parse({}),
+      HandsFreeProjectionSchema
+    ),
+    setHandsFreePreferences: (preferences) => invoke(
+      ipc,
+      IPC_CHANNELS.handsFreeSetPreferences,
+      HandsFreePreferencesSchema.parse(preferences),
+      HandsFreeProjectionSchema
+    ),
+    finishHandsFreeSpeech: (speechId) => invoke(
+      ipc,
+      IPC_CHANNELS.handsFreeSpeechFinished,
+      HandsFreeSpeechFinishedPayloadSchema.parse({ speechId }),
+      HandsFreeProjectionSchema
+    ),
+    onHandsFreeChanged: (listener) => {
+      let subscribed = true;
+      const wrapped = (_event, rawEnvelope) => {
+        const envelope = HandsFreeChangedEventSchema.parse(rawEnvelope);
+        listener(envelope.payload);
+      };
+      ipc.on(IPC_CHANNELS.handsFreeChanged, wrapped);
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        ipc.removeListener(IPC_CHANNELS.handsFreeChanged, wrapped);
       };
     },
     getAgentInteraction: () => invoke(
@@ -15034,6 +15269,12 @@ function createRendererApi(ipc) {
       TwitchEmptyPayloadSchema.parse({}),
       TwitchOperationAcceptedSchema
     ),
+    searchTwitchCategories: (query) => invoke(
+      ipc,
+      IPC_CHANNELS.twitchCategorySearch,
+      TwitchCategorySearchPayloadSchema.parse({ query }),
+      TwitchCategorySearchResultSchema
+    ),
     onTwitchActivity: (listener) => {
       let subscribed = true;
       const wrapped = (_event, rawEnvelope) => {
@@ -15046,8 +15287,78 @@ function createRendererApi(ipc) {
         subscribed = false;
         ipc.removeListener(IPC_CHANNELS.twitchActivity, wrapped);
       };
-    }
+    },
+    getLiveSession: () => invoke(
+      ipc,
+      IPC_CHANNELS.liveSessionGetProjection,
+      LiveSessionEmptyPayloadSchema.parse({}),
+      LiveSessionProjectionSchema
+    ),
+    getLiveSessionProfiles: () => invoke(
+      ipc,
+      IPC_CHANNELS.liveSessionGetProfiles,
+      LiveSessionEmptyPayloadSchema.parse({}),
+      LiveSessionProfilesProjectionSchema
+    ),
+    prepareLiveSession: (profile, mode) => invoke(
+      ipc,
+      IPC_CHANNELS.liveSessionPrepare,
+      PrepareLiveSessionPayloadSchema.parse({
+        profile: LiveSessionProfileV1Schema.parse(profile),
+        mode: LiveSessionModeSchema.parse(mode)
+      }),
+      LiveSessionProjectionSchema
+    ),
+    decideLiveSession: (payload) => invoke(
+      ipc,
+      IPC_CHANNELS.liveSessionDecision,
+      LiveSessionDecisionPayloadSchema.parse(payload),
+      LiveSessionProjectionSchema
+    ),
+    stopLiveSession: () => invoke(
+      ipc,
+      IPC_CHANNELS.liveSessionStop,
+      LiveSessionEmptyPayloadSchema.parse({}),
+      LiveSessionProjectionSchema
+    ),
+    emergencyStopLiveSession: () => invoke(
+      ipc,
+      IPC_CHANNELS.liveSessionEmergencyStop,
+      LiveSessionEmptyPayloadSchema.parse({}),
+      LiveSessionProjectionSchema
+    ),
+    executeModeration: (intent, confirmed) => invoke(
+      ipc,
+      IPC_CHANNELS.moderationExecute,
+      ModerationCommandPayloadSchema.parse({ intent, confirmed }),
+      TwitchOperationAcceptedSchema
+    ),
+    onLiveSessionChanged: (listener) => subscribe(ipc, IPC_CHANNELS.liveSessionChanged, LiveSessionChangedEventSchema, listener),
+    onChatMessage: (listener) => subscribe(ipc, IPC_CHANNELS.chatMessage, ChatMessageEventSchema, listener),
+    onChatAnalysis: (listener) => subscribe(ipc, IPC_CHANNELS.chatAnalysis, ChatAnalysisEventSchema, listener),
+    getPilotOverlayPreferences: () => invoke(
+      ipc,
+      IPC_CHANNELS.pilotOverlayGetPreferences,
+      LiveSessionEmptyPayloadSchema.parse({}),
+      PilotOverlayPreferencesSchema
+    ),
+    setPilotOverlayPreferences: (preferences) => invoke(
+      ipc,
+      IPC_CHANNELS.pilotOverlaySetPreferences,
+      PilotOverlayPreferencesSchema.parse(preferences),
+      PilotOverlayPreferencesSchema
+    )
   });
+}
+function subscribe(ipc, channel, schema, listener) {
+  let subscribed = true;
+  const wrapped = (_event, rawEnvelope) => listener(schema.parse(rawEnvelope).payload);
+  ipc.on(channel, wrapped);
+  return () => {
+    if (!subscribed) return;
+    subscribed = false;
+    ipc.removeListener(channel, wrapped);
+  };
 }
 async function invoke(ipc, channel, payload, outputSchema) {
   const requestId = crypto.randomUUID();

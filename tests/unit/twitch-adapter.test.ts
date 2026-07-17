@@ -35,6 +35,22 @@ describe('delegated Twitch authentication', () => {
     });
     await expect(provider.getAccessTokenForUser('12345')).rejects.toThrow('invalid delegated');
   });
+
+  it('accepts opaque RFC 6750 bearer-token characters returned by Twitch', async () => {
+    const provider = new DelegatedTwitchAuthProvider('abcdefgh12345678', '12345', {
+      acquire: async () => ({
+        accessToken: 'AbCdEf_gh-ij.kl~mn+op/12==',
+        userId: '12345',
+        scopes: ['user:read:chat'],
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    });
+
+    await expect(provider.getAccessTokenForUser('12345')).resolves.toMatchObject({
+      accessToken: 'AbCdEf_gh-ij.kl~mn+op/12==',
+      userId: '12345',
+    });
+  });
 });
 
 describe('Twitch event resilience primitives', () => {

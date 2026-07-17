@@ -35,6 +35,9 @@ const DeviceIdentitySchema = z
     publicId: z.string().uuid(),
   })
   .strict();
+const FunctionFaultSchema = z
+  .object({ reasonCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,95}$/u) })
+  .passthrough();
 
 export interface CloudBridgeConfig {
   readonly url: string;
@@ -313,7 +316,9 @@ export class CloudBridge {
       throw new Error('Cloud authorization is required');
     }
     const result = await this.client.functions.invoke(name, { body });
-    if (result.error !== null) throw new Error('Cloud function request failed');
+    if (result.error !== null) {
+      throw new Error(await extractFunctionFaultReason(result.error));
+    }
     return schema.parse(result.data);
   }
 
@@ -543,6 +548,20 @@ export class CloudBridge {
       reasonCode,
       correlationId: randomUUID(),
     });
+  }
+}
+
+export async function extractFunctionFaultReason(error: unknown): Promise<string> {
+  if (typeof error !== 'object' || error === null || !('context' in error)) {
+    return 'CLOUD_FUNCTION_FAILED';
+  }
+  const context = (error as { context?: unknown }).context;
+  if (!(context instanceof Response)) return 'CLOUD_FUNCTION_FAILED';
+  try {
+    const parsed = FunctionFaultSchema.safeParse(await context.clone().json());
+    return parsed.success ? parsed.data.reasonCode : 'CLOUD_FUNCTION_FAILED';
+  } catch {
+    return 'CLOUD_FUNCTION_FAILED';
   }
 }
 

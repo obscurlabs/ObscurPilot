@@ -35,7 +35,7 @@ TWITCH_CLIENT_SECRET=...
 TWITCH_REDIRECT_URI=https://PROJECT_REF.supabase.co/functions/v1/twitch-oauth-callback
 TWITCH_COMPLETION_URI=obscurpilot://oauth/twitch/callback
 TWITCH_TOKEN_ENCRYPTION_KEY=<base64-encoded 32 random bytes>
-TWITCH_SCOPES=
+TWITCH_SCOPES=channel:manage:broadcast channel:moderate moderator:manage:banned_users moderator:manage:chat_messages user:manage:blocked_users user:read:chat user:write:chat
 ```
 
 Never place the Client Secret, encryption key, service-role key, access token, or refresh token in the root desktop `.env`.

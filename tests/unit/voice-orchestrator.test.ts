@@ -36,7 +36,7 @@ describe('voice orchestration privacy boundary', () => {
     expect(bytes.every((value) => value === 0)).toBe(true);
   });
 
-  it('expires confirmation after 15 seconds and resumes the paused loop deadline', async () => {
+  it('expires confirmation after 45 seconds and resumes the paused loop deadline', async () => {
     vi.useFakeTimers();
     const projections: AgentInteractionProjection[] = [];
     const pauseDeadline = vi.fn();
@@ -81,7 +81,7 @@ describe('voice orchestration privacy boundary', () => {
       phase: 'awaiting_confirmation',
       confirmation: { tool: { name: 'obs.start_stream', version: 1 } },
     });
-    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(45_000);
     await process;
     expect(approved).toBe(false);
     expect(pauseDeadline).toHaveBeenCalledOnce();
@@ -90,5 +90,57 @@ describe('voice orchestration privacy boundary', () => {
       true,
     );
     vi.useRealTimers();
+  });
+
+  it('accepts a spoken hands-free confirmation without cancelling the protected tool', async () => {
+    const projections: AgentInteractionProjection[] = [];
+    let approved: boolean | undefined;
+    const transcription = new GroqTranscriptionAdapter({
+      transport: {
+        transcribe: async (request) => ({
+          text: (await request.file.bytes()).byteLength > 100 ? 'start streaming' : 'yes',
+        }),
+      },
+      maxAttempts: 1,
+    });
+    const orchestrator = new VoiceOrchestrator({
+      transcription,
+      onProjection: (projection) => projections.push(projection),
+      onConnection: () => undefined,
+      onTranscript: async (_result, context) => {
+        approved = await orchestrator.requestConfirmation({
+          correlationId: context.correlationId,
+          tool: { name: 'obs.start_stream', version: 1 },
+          signal: context.signal,
+          pauseDeadline: () => undefined,
+          resumeDeadline: () => undefined,
+        });
+      },
+    });
+    const initial = orchestrator.processClip({
+      clipId: crypto.randomUUID(),
+      sessionId: crypto.randomUUID(),
+      durationMs: 250,
+      bytes: new Uint8Array(128),
+      mimeType: 'audio/wav',
+      truncated: false,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await orchestrator.processClip(
+      {
+        clipId: crypto.randomUUID(),
+        sessionId: crypto.randomUUID(),
+        durationMs: 250,
+        bytes: new Uint8Array(64),
+        mimeType: 'audio/wav',
+        truncated: false,
+      },
+      'hands_free',
+    );
+    await initial;
+    expect(approved).toBe(true);
+    expect(
+      projections.some((projection) => projection.reasonCode === 'VOICE_CONFIRMATION_APPROVED'),
+    ).toBe(true);
   });
 });

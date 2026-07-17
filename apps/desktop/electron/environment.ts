@@ -1,11 +1,18 @@
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { config as loadDotEnv } from 'dotenv';
 import { z } from 'zod';
 
 const emptyToUndefined = (value: unknown): unknown => (value === '' ? undefined : value);
 const optionalSecret = z.preprocess(emptyToUndefined, z.string().min(1).optional());
 const optionalUrl = z.preprocess(emptyToUndefined, z.string().url().optional());
+const optionalAbsolutePath = z.preprocess(
+  emptyToUndefined,
+  z
+    .string()
+    .refine((value) => isAbsolute(value), 'Path must be absolute')
+    .optional(),
+);
 const loopbackWebSocketUrl = z.preprocess(
   emptyToUndefined,
   z
@@ -39,6 +46,7 @@ const EnvironmentSchema = z.object({
   TWITCH_REDIRECT_URI: optionalUrl,
   OBS_WEBSOCKET_URL: loopbackWebSocketUrl,
   OBS_WEBSOCKET_PASSWORD: optionalSecret,
+  OBS_EXECUTABLE_PATH: optionalAbsolutePath,
   OBSCURPILOT_LOG_LEVEL: z
     .preprocess(emptyToUndefined, z.enum(['debug', 'info', 'warn', 'error']).optional())
     .default('info'),

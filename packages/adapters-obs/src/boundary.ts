@@ -20,16 +20,36 @@ const SNAPSHOT_INVALIDATING_EVENTS = [
   'InputCreated',
   'InputRemoved',
   'InputNameChanged',
+  'InputSettingsChanged',
   'StreamStateChanged',
   'RecordStateChanged',
   'StudioModeStateChanged',
 ] as const;
 
 export type ObsCommandRequest =
+  | { readonly requestType: 'CreateScene'; readonly requestData: { sceneName: string } }
+  | {
+      readonly requestType: 'CreateInput';
+      readonly requestData: {
+        sceneName: string;
+        inputName: string;
+        inputKind: string;
+        inputSettings: Readonly<Record<string, unknown>>;
+        sceneItemEnabled: boolean;
+      };
+    }
   | { readonly requestType: 'SetCurrentProgramScene'; readonly requestData: { sceneName: string } }
   | {
       readonly requestType: 'SetInputMute';
       readonly requestData: { inputName: string; inputMuted: boolean };
+    }
+  | {
+      readonly requestType: 'SetInputSettings';
+      readonly requestData: {
+        inputName: string;
+        inputSettings: { text: string };
+        overlay: true;
+      };
     }
   | { readonly requestType: 'StartStream'; readonly requestData?: never }
   | { readonly requestType: 'StopStream'; readonly requestData?: never }
@@ -97,7 +117,10 @@ interface ObsCallMap {
   readonly GetRecordStatus: { readonly outputActive: boolean };
   readonly GetStudioModeEnabled: { readonly studioModeEnabled: boolean };
   readonly SetCurrentProgramScene: unknown;
+  readonly CreateScene: unknown;
+  readonly CreateInput: unknown;
   readonly SetInputMute: unknown;
+  readonly SetInputSettings: unknown;
   readonly StartStream: unknown;
   readonly StopStream: unknown;
   readonly StartRecord: unknown;

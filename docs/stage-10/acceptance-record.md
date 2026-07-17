@@ -29,7 +29,7 @@ Accepted on: 2026-07-16
 | Gate                                       | Result                                                                      |
 | ------------------------------------------ | --------------------------------------------------------------------------- |
 | Static analysis                            | TypeScript, ESLint, and Prettier passed                                     |
-| Unit suite                                 | 83 tests passed                                                             |
+| Unit suite                                 | 84 tests passed                                                             |
 | Contract suite                             | Passed                                                                      |
 | Integration, chaos, and performance suites | Passed; one real-provider integration remains environment-gated             |
 | 10,000-event fixture                       | Under 100 ms projection/filter budget; at most 15 rendered rows             |

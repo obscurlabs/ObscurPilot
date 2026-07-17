@@ -11,6 +11,7 @@ export const PttPhaseSchema = z.enum([
   'error',
 ]);
 export type PttPhase = z.infer<typeof PttPhaseSchema>;
+export type VoiceCaptureSource = 'ptt' | 'hands_free';
 
 export const PttProjectionSchema = z
   .object({
@@ -60,3 +61,48 @@ export const SelectAudioDevicePayloadSchema = z
 export const EmptyPayloadSchema = z.object({}).strict();
 export const OperationAcceptedSchema = z.object({ accepted: z.literal(true) }).strict();
 export const PttChangedEventSchema = createEventEnvelopeSchema(PttProjectionSchema);
+
+export const HandsFreePreferencesSchema = z
+  .object({
+    enabled: z.boolean(),
+    wakePhrase: z.string().trim().min(2).max(32),
+    speechThreshold: z.number().min(0.005).max(0.25),
+    silenceReleaseMs: z.number().int().min(350).max(3_000),
+    conversationWindowMs: z.number().int().min(15_000).max(900_000),
+  })
+  .strict();
+export type HandsFreePreferences = z.infer<typeof HandsFreePreferencesSchema>;
+
+export const HandsFreePhaseSchema = z.enum([
+  'disabled',
+  'arming',
+  'standby',
+  'listening',
+  'transcribing',
+  'reasoning',
+  'awaiting_confirmation',
+  'speaking',
+  'paused',
+  'error',
+]);
+export const HandsFreeProjectionSchema = z
+  .object({
+    phase: HandsFreePhaseSchema,
+    reasonCode: z.string().min(1).max(96),
+    enabled: z.boolean(),
+    wakePhrase: z.string().min(2).max(32),
+    level: z.number().min(0).max(1),
+    sessionActive: z.boolean(),
+    sessionExpiresAt: z.string().datetime({ offset: true }).optional(),
+    speech: z
+      .object({ id: z.string().uuid(), text: z.string().trim().min(1).max(1_000) })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type HandsFreeProjection = z.infer<typeof HandsFreeProjectionSchema>;
+export const HandsFreeSetPreferencesPayloadSchema = HandsFreePreferencesSchema;
+export const HandsFreeSpeechFinishedPayloadSchema = z
+  .object({ speechId: z.string().uuid() })
+  .strict();
+export const HandsFreeChangedEventSchema = createEventEnvelopeSchema(HandsFreeProjectionSchema);

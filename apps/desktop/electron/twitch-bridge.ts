@@ -2,6 +2,12 @@ import { createHash, randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import type { ConnectionProjection } from '@obscurpilot/contracts/state';
+import type {
+  ChatMessageProjection,
+  LiveSessionProfileV1,
+  ModerationIntentV1,
+  TwitchMetadata,
+} from '@obscurpilot/contracts/live-session';
 import {
   TwitchProjectionSchema,
   type TwitchActivity,
@@ -54,7 +60,9 @@ export interface TwitchBridgeOptions {
   readonly encryption: EncryptionProvider;
   readonly openExternal: (url: string) => Promise<unknown>;
   readonly onConnection: (projection: ConnectionProjection) => void;
+  readonly onProjection?: (projection: TwitchProjection) => void;
   readonly onActivity: (activity: TwitchActivity) => void;
+  readonly onChatMessage?: (message: ChatMessageProjection) => void;
   readonly runtimeFactory?: typeof TwitchRuntime;
 }
 
@@ -82,6 +90,10 @@ export class TwitchBridge {
   }
 
   public async start(): Promise<void> {
+    await this.synchronizeFromCloud();
+  }
+
+  private async synchronizeFromCloud(): Promise<boolean> {
     let result: z.infer<typeof TwitchAccountResponseSchema>;
     try {
       result = await this.options.cloud.invokeFunction(
@@ -95,13 +107,19 @@ export class TwitchBridge {
         phase: 'signed_out',
         reasonCode: 'CLOUD_AUTH_REQUIRED',
       });
-      return;
+      return false;
     }
     if (!result.connected || result.account === undefined) {
       this.setProjection({ configured: true, phase: 'signed_out', reasonCode: result.reasonCode });
-      return;
+      return false;
     }
-    await this.startRuntime(result.account);
+    try {
+      await this.startRuntime(result.account);
+      return true;
+    } catch {
+      // TwitchRuntime publishes a bounded auth/degraded projection before rejecting.
+      return false;
+    }
   }
 
   public async connect(): Promise<{ accepted: true }> {
@@ -126,12 +144,21 @@ export class TwitchBridge {
   public async handleCallback(value: string): Promise<boolean> {
     const callback = parseCompletionCallback(value);
     if (callback === undefined) return false;
+    this.setProjection({
+      configured: true,
+      phase: 'authorizing',
+      reasonCode: 'OAUTH_CALLBACK_RECEIVED',
+    });
     const pending = await this.flowStore.load();
     if (
       pending === null ||
       pending.flowId !== callback.flowId ||
       Date.parse(pending.expiresAt) <= Date.now()
     ) {
+      if (await this.synchronizeFromCloud()) {
+        await this.flowStore.save(null);
+        return true;
+      }
       this.setProjection({
         configured: true,
         phase: 'degraded',
@@ -139,23 +166,105 @@ export class TwitchBridge {
       });
       return true;
     }
-    const result = await this.options.cloud.invokeFunction(
-      OAUTH_FUNCTION,
-      { action: 'finalize', flowId: pending.flowId, codeVerifier: pending.verifier },
-      TwitchAccountResponseSchema,
-    );
-    await this.flowStore.save(null);
-    if (!result.connected || result.account === undefined) {
-      this.setProjection({ configured: true, phase: 'degraded', reasonCode: result.reasonCode });
+    try {
+      const result = await this.options.cloud.invokeFunction(
+        OAUTH_FUNCTION,
+        { action: 'finalize', flowId: pending.flowId, codeVerifier: pending.verifier },
+        TwitchAccountResponseSchema,
+      );
+      await this.flowStore.save(null);
+      if (!result.connected || result.account === undefined) {
+        if (await this.synchronizeFromCloud()) return true;
+        this.setProjection({ configured: true, phase: 'degraded', reasonCode: result.reasonCode });
+        return true;
+      }
+      try {
+        await this.startRuntime(result.account);
+      } catch {
+        // Runtime has already published the actionable connection failure.
+      }
+      return true;
+    } catch {
+      // The hosted callback stores the account before redirecting to the desktop.
+      // Recover from that authoritative record if finalization was interrupted locally.
+      if (await this.synchronizeFromCloud()) {
+        await this.flowStore.save(null);
+        return true;
+      }
+      this.setProjection({
+        configured: true,
+        phase: 'degraded',
+        reasonCode: 'OAUTH_FINALIZATION_FAILED',
+      });
       return true;
     }
-    await this.startRuntime(result.account);
-    return true;
   }
 
   public async reconnect(): Promise<void> {
     if (this.runtime === undefined) return this.start();
     await this.runtime.reconnect();
+  }
+
+  public async sessionPreflight(profile: LiveSessionProfileV1) {
+    const runtime = this.requireRuntime();
+    return runtime.getSessionPreflight(profile.twitch.categoryId, profile.twitch.categoryName);
+  }
+
+  public searchCategories(
+    query: string,
+  ): Promise<readonly { readonly id: string; readonly name: string }[]> {
+    return this.requireRuntime().searchCategories(query);
+  }
+
+  public updateMetadata(metadata: TwitchMetadata): Promise<void> {
+    this.requireScope('channel:manage:broadcast');
+    return this.requireRuntime().updateMetadata(metadata);
+  }
+
+  public restoreMetadata(metadata: TwitchMetadata): Promise<void> {
+    this.requireScope('channel:manage:broadcast');
+    return this.requireRuntime().updateMetadata(metadata);
+  }
+
+  public isLive(): Promise<boolean> {
+    return this.requireRuntime().isLive();
+  }
+
+  public sendMessage(message: string): Promise<string> {
+    this.requireScope('user:write:chat');
+    return this.requireRuntime().sendMessage(message);
+  }
+
+  public async executeModeration(intent: ModerationIntentV1): Promise<void> {
+    const runtime = this.requireRuntime();
+    const identity = await runtime.resolveUser(intent.targetLogin);
+    if (identity === undefined || identity.id !== intent.targetUserId) {
+      throw new Error('TWITCH_TARGET_MISMATCH');
+    }
+    if (intent.action === 'delete_message') {
+      this.requireScope('moderator:manage:chat_messages');
+      if (intent.messageId === undefined) throw new Error('MESSAGE_ID_REQUIRED');
+      return runtime.deleteMessage(intent.messageId);
+    }
+    if (intent.action === 'timeout_user') {
+      this.requireScope('moderator:manage:banned_users');
+      if (intent.durationSeconds === undefined) throw new Error('TIMEOUT_DURATION_REQUIRED');
+      return runtime.timeoutUser(intent.targetUserId, intent.durationSeconds, intent.reason);
+    }
+    if (intent.action === 'ban_user') {
+      this.requireScope('moderator:manage:banned_users');
+      return runtime.banUser(intent.targetUserId, intent.reason);
+    }
+    if (intent.action === 'unban_user') {
+      this.requireScope('moderator:manage:banned_users');
+      return runtime.unbanUser(intent.targetUserId);
+    }
+    if (intent.action === 'block_user') {
+      this.requireScope('user:manage:blocked_users');
+      return runtime.blockUser(intent.targetUserId);
+    }
+    this.requireScope('user:manage:blocked_users');
+    return runtime.unblockUser(intent.targetUserId);
   }
 
   public async disconnect(): Promise<TwitchProjection> {
@@ -223,12 +332,27 @@ export class TwitchBridge {
         this.setProjection({ configured: true, phase, account, reasonCode: connection.reasonCode });
       },
       onActivity: this.options.onActivity,
+      ...(this.options.onChatMessage === undefined
+        ? {}
+        : { onChatMessage: this.options.onChatMessage }),
     });
     await this.runtime.start();
   }
 
   private setProjection(projection: TwitchProjection): void {
     this.projection = TwitchProjectionSchema.parse(projection);
+    this.options.onProjection?.(this.snapshot());
+  }
+
+  private requireRuntime(): TwitchRuntime {
+    if (this.runtime === undefined || this.projection.phase !== 'connected') {
+      throw new Error('TWITCH_NOT_CONNECTED');
+    }
+    return this.runtime;
+  }
+
+  private requireScope(scope: string): void {
+    if (!this.projection.account?.scopes.includes(scope)) throw new Error('TWITCH_SCOPE_REQUIRED');
   }
 }
 

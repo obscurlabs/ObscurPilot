@@ -13,6 +13,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
 import { VoicePresence } from '../components/voice-presence';
+import { LiveSessionConsole } from '../components/live-session-console';
 import {
   activitiesFromSnapshot,
   activityFromAgent,
@@ -342,6 +343,7 @@ export function App() {
   const [twitchNotice, setTwitchNotice] = useState<string>();
   const { preferences, updatePreferences, resetPreferences } = useUiPreferences();
   const preferencesRef = useRef(preferences);
+  const handsFreeEnabledRef = useRef(true);
   const pendingActivitiesRef = useRef<ActivityItem[]>([]);
   const activityFrameRef = useRef<number | undefined>(undefined);
   const [speechQueue] = useState(() => createBrowserSpeechQueue(setSpeechFallback));
@@ -369,13 +371,15 @@ export function App() {
 
   const refreshRuntime = useCallback(async () => {
     try {
-      const [bootstrap, snapshot, obs, cloud, twitch] = await Promise.all([
+      const [bootstrap, snapshot, obs, cloud, twitch, handsFree] = await Promise.all([
         window.obscurPilot.getBootstrap(),
         window.obscurPilot.getSnapshot(snapshotRef.current?.snapshotVersion),
         window.obscurPilot.getObsSnapshot(),
         window.obscurPilot.getCloudAuth(),
         window.obscurPilot.getTwitchProjection(),
+        window.obscurPilot.getHandsFreeProjection(),
       ]);
+      handsFreeEnabledRef.current = handsFree.enabled;
       snapshotRef.current = snapshot;
       setObsProjection(obs);
       setCloudProjection(cloud);
@@ -396,7 +400,7 @@ export function App() {
     (agent: AgentInteractionProjection) => {
       enqueueActivity(activityFromAgent(agent));
       const announcement = announcementForAgent(agent);
-      if (announcement !== null) {
+      if (announcement !== null && !handsFreeEnabledRef.current) {
         const current = preferencesRef.current;
         speechQueue.enqueue(announcement, {
           enabled: current.speechEnabled,
@@ -517,14 +521,19 @@ export function App() {
       if (!active) return;
       enqueueActivity(activityFromTwitch(activity));
     });
+    const unsubscribeHandsFree = window.obscurPilot.onHandsFreeChanged((projection) => {
+      handsFreeEnabledRef.current = projection.enabled;
+      if (projection.enabled) speechQueue.cancel();
+    });
 
     void refreshRuntime();
     return () => {
       active = false;
       unsubscribe();
       unsubscribeTwitch();
+      unsubscribeHandsFree();
     };
-  }, [announceConnection, enqueueActivity, refreshRuntime]);
+  }, [announceConnection, enqueueActivity, refreshRuntime, speechQueue]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -607,6 +616,10 @@ export function App() {
               <span aria-hidden="true">03</span>
               Connections
             </a>
+            <a className="workspace-nav-link" href="#live-session">
+              <span aria-hidden="true">04</span>
+              Live session
+            </a>
             <a className="workspace-nav-link" href="#activity-timeline">
               <span aria-hidden="true">04</span>
               Activity
@@ -648,7 +661,7 @@ export function App() {
               </div>
               <div className="topbar-status">
                 <span className="topbar-status-label">Production control board</span>
-                <Badge tone="ready">Stage 10 · Complete</Badge>
+                <Badge tone="ready">Stage 11.1 · Hands-free ready</Badge>
               </div>
             </header>
 
@@ -733,6 +746,7 @@ export function App() {
                   phase={loadState.snapshot.connections.obs.phase}
                   onReconnect={() => void window.obscurPilot.reconnectObs()}
                 />
+                <LiveSessionConsole obs={obsProjection} />
                 <Card className="span-full" id="connections">
                   <CardHeader>
                     <div className="flex items-center justify-between">

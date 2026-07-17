@@ -128,7 +128,7 @@ export class PttAudioPipeline {
     this.now = options.now ?? Date.now;
   }
 
-  public press(): string | undefined {
+  public press(requestedSessionId?: string): string | undefined {
     if (
       this.phase !== 'idle' &&
       this.phase !== 'ready' &&
@@ -138,7 +138,7 @@ export class PttAudioPipeline {
       return undefined;
     }
     this.buffer?.clear();
-    this.sessionId = this.id();
+    this.sessionId = requestedSessionId ?? this.id();
     this.startedAt = this.now();
     this.buffer = new BoundedPcmRingBuffer(
       Math.ceil((this.sampleRate * this.maxDurationMs) / 1_000),

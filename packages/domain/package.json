@@ -40,6 +40,14 @@
       "types": "./dist/loop-controller.d.ts",
       "import": "./dist/loop-controller.js"
     },
+    "./live-session-coordinator": {
+      "types": "./dist/live-session-coordinator.d.ts",
+      "import": "./dist/live-session-coordinator.js"
+    },
+    "./chat-intelligence": {
+      "types": "./dist/chat-intelligence.d.ts",
+      "import": "./dist/chat-intelligence.js"
+    },
     "./platform-adapter": {
       "types": "./dist/platform-adapter.d.ts",
       "import": "./dist/platform-adapter.js"

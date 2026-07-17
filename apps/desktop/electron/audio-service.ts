@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import {
   AudioDeviceListSchema,
+  HandsFreePreferencesSchema,
   PttChangedEventSchema,
   type AudioDevice,
+  type HandsFreePreferences,
   type PttProjection,
+  type VoiceCaptureSource,
 } from '@obscurpilot/contracts/audio';
 import { AudioClipVault, PttAudioPipeline } from '@obscurpilot/domain/audio-pipeline';
 import type { EncodedAudioClip } from '@obscurpilot/domain/audio-pipeline';
@@ -14,6 +17,10 @@ import type { SecureSettingsStore } from './secure-settings.js';
 const INTERNAL_EVENT = 'audio-internal:event:v1';
 const INTERNAL_COMMAND = 'audio-internal:command:v1';
 const AudioInternalEventSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('monitoring') }).strict(),
+  z.object({ kind: z.literal('monitor-stopped') }).strict(),
+  z.object({ kind: z.literal('utterance-started'), sessionId: z.string().uuid() }).strict(),
+  z.object({ kind: z.literal('utterance-stopped'), sessionId: z.string().uuid() }).strict(),
   z.object({ kind: z.literal('started'), sessionId: z.string().uuid() }).strict(),
   z.object({ kind: z.literal('stopped'), sessionId: z.string().uuid() }).strict(),
   z.object({ kind: z.literal('cancelled'), sessionId: z.string().uuid() }).strict(),
@@ -57,6 +64,14 @@ export class PttAudioService {
   private watchdog: ReturnType<typeof setTimeout> | undefined;
   private accelerator = '';
   private disposed = false;
+  private handsFreeSessions = new Set<string>();
+  private handsFree: HandsFreePreferences = HandsFreePreferencesSchema.parse({
+    enabled: false,
+    wakePhrase: 'Hi Obscur',
+    speechThreshold: 0.018,
+    silenceReleaseMs: 850,
+    conversationWindowMs: 300_000,
+  });
 
   public constructor(
     private readonly ipcMain: Pick<IpcMain, 'on' | 'removeListener'>,
@@ -65,7 +80,15 @@ export class PttAudioService {
     private readonly emitProjection: (
       event: ReturnType<typeof PttChangedEventSchema.parse>,
     ) => void,
-    private readonly onClip?: (clip: EncodedAudioClip) => Promise<void> | void,
+    private readonly onClip?: (
+      clip: EncodedAudioClip,
+      source: VoiceCaptureSource,
+    ) => Promise<void> | void,
+    private readonly onHandsFreeAudio?: (
+      phase: 'arming' | 'standby' | 'listening' | 'paused' | 'error',
+      reasonCode: string,
+      level?: number,
+    ) => void,
   ) {
     this.pipeline = new PttAudioPipeline({
       onProjection: (projection) => this.publish(projection),
@@ -76,11 +99,14 @@ export class PttAudioService {
 
   public async start(): Promise<void> {
     const settings = await this.settings.load();
+    this.handsFree = settings.handsFree;
     this.setAcceleratorRegistration(settings.accelerator);
     this.publish(this.pipeline.projection());
+    if (this.handsFree.enabled) this.startMonitor();
   }
 
   public press(): void {
+    this.captureWindow.webContents.send(INTERNAL_COMMAND, { kind: 'monitor-stop' });
     const sessionId = this.pipeline.press();
     if (sessionId === undefined) return;
     this.captureWindow.webContents.send(INTERNAL_COMMAND, {
@@ -124,6 +150,26 @@ export class PttAudioService {
 
   public async selectDevice(deviceId: string): Promise<void> {
     await this.settings.update({ audioDeviceId: deviceId });
+    if (this.handsFree.enabled) this.startMonitor();
+  }
+
+  public async setHandsFreePreferences(preferences: HandsFreePreferences): Promise<void> {
+    this.handsFree = HandsFreePreferencesSchema.parse(preferences);
+    await this.settings.update({ handsFree: this.handsFree });
+    if (this.handsFree.enabled) this.startMonitor();
+    else {
+      this.captureWindow.webContents.send(INTERNAL_COMMAND, { kind: 'monitor-stop' });
+      this.onHandsFreeAudio?.('paused', 'HANDS_FREE_DISABLED');
+    }
+  }
+
+  public setSuppressed(suppressed: boolean): void {
+    if (!this.handsFree.enabled) return;
+    this.captureWindow.webContents.send(INTERNAL_COMMAND, { kind: 'suppress', suppressed });
+    this.onHandsFreeAudio?.(
+      suppressed ? 'paused' : 'standby',
+      suppressed ? 'PILOT_SPEAKING' : 'AWAITING_WAKE_PHRASE',
+    );
   }
 
   public listDevices(): Promise<{ devices: AudioDevice[] }> {
@@ -152,6 +198,7 @@ export class PttAudioService {
     clearTimeout(this.watchdog);
     if (this.accelerator !== '') globalShortcut.unregister(this.accelerator);
     this.pipeline.cancel('SHUTDOWN');
+    this.captureWindow.webContents.send(INTERNAL_COMMAND, { kind: 'monitor-stop' });
     this.vault.dispose();
     this.ipcMain.removeListener(INTERNAL_EVENT, this.onInternalEvent);
     for (const pending of this.pendingDevices.values()) {
@@ -167,6 +214,24 @@ export class PttAudioService {
     const parsed = AudioInternalEventSchema.safeParse(raw);
     if (!parsed.success) return;
     const message = parsed.data;
+    if (message.kind === 'monitoring') {
+      this.onHandsFreeAudio?.('standby', 'AWAITING_WAKE_PHRASE');
+    }
+    if (message.kind === 'monitor-stopped' && this.handsFree.enabled) {
+      this.onHandsFreeAudio?.('paused', 'MICROPHONE_PAUSED');
+    }
+    if (message.kind === 'utterance-started') {
+      const sessionId = this.pipeline.press(message.sessionId);
+      if (sessionId !== undefined) {
+        this.handsFreeSessions.add(sessionId);
+        this.pipeline.armed(sessionId);
+        this.onHandsFreeAudio?.('listening', 'SPEECH_DETECTED');
+      }
+    }
+    if (message.kind === 'utterance-stopped') {
+      this.pipeline.release(message.sessionId);
+      this.onHandsFreeAudio?.('standby', 'UTTERANCE_CAPTURED');
+    }
     if (message.kind === 'started') this.pipeline.armed(message.sessionId);
     if (message.kind === 'samples') {
       this.pipeline.append(message.sessionId, message.samples, message.level);
@@ -182,7 +247,21 @@ export class PttAudioService {
         pending.resolve(message.devices);
       }
     }
+    if ((message.kind === 'stopped' || message.kind === 'cancelled') && this.handsFree.enabled) {
+      this.startMonitor();
+    }
   };
+
+  private startMonitor(): void {
+    if (this.disposed || !this.handsFree.enabled) return;
+    this.onHandsFreeAudio?.('arming', 'MICROPHONE_ARMING');
+    this.captureWindow.webContents.send(INTERNAL_COMMAND, {
+      kind: 'monitor-start',
+      deviceId: this.settings.snapshot().audioDeviceId,
+      speechThreshold: this.handsFree.speechThreshold,
+      silenceReleaseMs: this.handsFree.silenceReleaseMs,
+    });
+  }
 
   private setAcceleratorRegistration(accelerator: string): void {
     if (accelerator === this.accelerator) return;
@@ -208,10 +287,13 @@ export class PttAudioService {
   }
 
   private handleClip(clip: EncodedAudioClip): void {
+    const source: VoiceCaptureSource = this.handsFreeSessions.delete(clip.sessionId)
+      ? 'hands_free'
+      : 'ptt';
     this.vault.put(clip);
     if (this.onClip === undefined) return;
     const owned = this.vault.take(clip.clipId);
     if (owned === undefined) return;
-    void Promise.resolve(this.onClip(owned)).finally(() => owned.bytes.fill(0));
+    void Promise.resolve(this.onClip(owned, source)).finally(() => owned.bytes.fill(0));
   }
 }

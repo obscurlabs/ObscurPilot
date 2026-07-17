@@ -32,13 +32,31 @@ export type TwitchProjection = z.infer<typeof TwitchProjectionSchema>;
 export const TwitchActivitySchema = z
   .object({
     id: z.string().min(1).max(256),
-    type: z.enum(['stream.online', 'stream.offline', 'channel.update']),
+    type: z.enum([
+      'stream.online',
+      'stream.offline',
+      'channel.update',
+      'channel.chat.message_delete',
+      'channel.chat.clear_user',
+      'channel.ban',
+    ]),
     occurredAt: z.string().datetime({ offset: true }),
     summary: z.string().min(1).max(500),
     metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
   })
   .strict();
 export type TwitchActivity = z.infer<typeof TwitchActivitySchema>;
+
+export const TwitchCategorySchema = z
+  .object({ id: z.string().regex(/^\d{1,32}$/u), name: z.string().min(1).max(120) })
+  .strict();
+export type TwitchCategory = z.infer<typeof TwitchCategorySchema>;
+export const TwitchCategorySearchPayloadSchema = z
+  .object({ query: z.string().trim().min(1).max(120) })
+  .strict();
+export const TwitchCategorySearchResultSchema = z
+  .object({ categories: z.array(TwitchCategorySchema).max(10) })
+  .strict();
 
 export const TwitchEmptyPayloadSchema = z.object({}).strict();
 export const TwitchOperationAcceptedSchema = z.object({ accepted: z.literal(true) }).strict();
