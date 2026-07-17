@@ -10,9 +10,9 @@ Prepared on: 2026-07-17
 - 'Hi Obscur', 'Hey Obscur', and common STT spelling variants open a five-minute follow-up window. Background utterances outside that window are discarded after wake detection.
 - Groq receives detected utterances only. Audio clips remain memory-only and are zeroed after transcription.
 - Native TTS speaks through the protected corner overlay. Capture is edge-suppressed while TTS is active and resumes after the renderer reports completion.
-- Spoken 'yes' or 'no' settles the application-owned confirmation promise without cancelling or bypassing the protected tool.
-- live_session.auto_prepare resolves the Twitch category, creates isolated Starting Soon and Live scenes, creates countdown text and fullscreen game capture, saves a versioned profile, and prepares the immutable plan.
-- Output start remains protected by live_session.start_prepared. The five-minute countdown and final scene switch remain inside the deterministic coordinator.
+- A creator push-to-talk gesture authorizes the exact requested tool actions in that utterance; no second spoken approval is required.
+- live_session.auto_prepare uses Groq model knowledge to compose a title, tags, language, and optional kickoff chat message. Twitch resolves the authoritative category, then the app provisions isolated OBS resources and saves the immutable plan.
+- A requested live start continues through live_session.start_prepared in the same tool loop. The default path selects the live scene with no delay; a deterministic countdown runs only when explicitly requested.
 - Hosted migration 202607170002_stage111_hands_free.sql grants automatic preparation to existing and future default control profiles.
 
 ## Automated evidence
@@ -20,7 +20,7 @@ Prepared on: 2026-07-17
 | Gate                            | Result     |
 | ------------------------------- | ---------- |
 | TypeScript, ESLint, Prettier    | Pass       |
-| Unit tests                      | 92/92 pass |
+| Unit tests                      | 96/96 pass |
 | Wake phrase/window tests        | Pass       |
 | Spoken confirmation test        | Pass       |
 | Production build                | Pass       |
@@ -32,10 +32,10 @@ Prepared on: 2026-07-17
 
 1. Start ObscurPilot and keep the main control board minimized or behind the game.
 2. Confirm the protected corner Pilot says 'Say Hi Obscur'.
-3. Say: 'Hi Obscur, we are streaming Sekiro today. Set up Twitch and OBS, show Starting Soon for five minutes, and then start the stream.'
+3. Push to talk and say: 'We are streaming Sekiro today. Create the best Twitch title and tags, set up OBS, and start the stream.'
 4. Verify Pilot resolves the Sekiro category and creates 'ObscurPilot - Starting Soon', 'ObscurPilot - Live', 'ObscurPilot Countdown', and 'ObscurPilot Game Capture'.
-5. When Pilot asks for approval, say 'yes'.
-6. Verify OBS and Twitch start, the countdown updates from five minutes, and the program scene switches at zero.
-7. Say 'stop the stream', then approve the protected stop and verify OBS and Twitch are offline.
+5. Verify the command runs without a second approval; the live scene is selected, Twitch metadata is applied, and the kickoff chat message is sent after authoritative live verification.
+6. Verify OBS and Twitch start with no countdown delay unless one was requested.
+7. Push to talk, say 'stop the stream', and verify OBS and Twitch are offline.
 
 Do not declare the real-device gate accepted until all seven observations pass on the dedicated Twitch account.

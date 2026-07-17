@@ -261,9 +261,11 @@ export class LiveSessionCoordinator {
         activeStep: 'prepare_obs',
         completedSteps: ['preflight', 'apply_twitch'],
       });
+      const initialSceneName =
+        plan.countdownSeconds > 0 ? profile.obs.preLiveSceneName : profile.obs.liveSceneName;
       await this.options.obs.setProgramScene(
-        profile.obs.preLiveSceneName,
-        `${plan.planId}:prelive`,
+        initialSceneName,
+        `${plan.planId}:${plan.countdownSeconds > 0 ? 'prelive' : 'live-ready'}`,
         signal,
       );
       if (plan.mode === 'dry_run' || profile.obs.recording === 'on') {
@@ -286,11 +288,13 @@ export class LiveSessionCoordinator {
       });
       await this.verifyOutput(plan, profile, signal);
       await this.countdown(plan, profile, signal);
-      await this.options.obs.setProgramScene(
-        profile.obs.liveSceneName,
-        `${plan.planId}:live-scene`,
-        signal,
-      );
+      if (plan.countdownSeconds > 0) {
+        await this.options.obs.setProgramScene(
+          profile.obs.liveSceneName,
+          `${plan.planId}:live-scene`,
+          signal,
+        );
+      }
       this.publish({
         phase: 'live',
         reasonCode: plan.mode === 'live' ? 'LIVE_VERIFIED' : 'DRY_RUN_VERIFIED',

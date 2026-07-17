@@ -38,6 +38,7 @@ function createHarness(input: {
   risk?: 'observe' | 'reversible' | 'confirm';
   authorize?: () => Promise<void>;
   execute?: (context: {
+    confirmed?: boolean;
     expectedObsSnapshotVersion?: number;
     expectedObsGeneration?: number;
   }) => Promise<unknown>;
@@ -71,6 +72,11 @@ function createHarness(input: {
     execute,
   });
   const audits: ToolAuditEvent[] = [];
+  const requestConfirmation = vi.fn(async ({ pauseDeadline, resumeDeadline }) => {
+    pauseDeadline();
+    resumeDeadline();
+    return input.confirm ?? false;
+  });
   const orchestrator = new GuardedReasoningOrchestrator({
     reasoning: new GroqReasoningAdapter({
       primaryModel: 'openai/gpt-oss-120b',
@@ -83,16 +89,12 @@ function createHarness(input: {
       expectedObsSnapshotVersion: 7,
       expectedObsGeneration: 3,
     }),
-    requestConfirmation: async ({ pauseDeadline, resumeDeadline }) => {
-      pauseDeadline();
-      resumeDeadline();
-      return input.confirm ?? false;
-    },
+    requestConfirmation,
     onAudit: (event) => audits.push(event),
     ...(input.limits === undefined ? {} : { limits: input.limits }),
     ...(input.now === undefined ? {} : { now: input.now }),
   });
-  return { orchestrator, execute, complete, audits };
+  return { orchestrator, execute, complete, audits, requestConfirmation };
 }
 
 describe('Stage 9 guarded reasoning orchestration', () => {
@@ -182,6 +184,23 @@ describe('Stage 9 guarded reasoning orchestration', () => {
       status: 'denied',
       reasonCode: 'CONFIRMATION_DENIED',
     });
+  });
+
+  it('uses an explicit creator gesture as authorization without a second confirmation', async () => {
+    const trusted = createHarness({
+      responses: [toolTurn(), finalTurn],
+      risk: 'confirm',
+      execute: async (context) => {
+        expect(context.confirmed).toBe(true);
+        return { accepted: true };
+      },
+    });
+    await trusted.orchestrator.run('start output', correlationId, new AbortController().signal, {
+      trustedCreatorGesture: true,
+    });
+    expect(trusted.requestConfirmation).not.toHaveBeenCalled();
+    expect(trusted.execute).toHaveBeenCalledOnce();
+    expect(trusted.audits[0]).toMatchObject({ status: 'succeeded', reasonCode: 'EXECUTED' });
   });
 
   it('terminates at hard ceilings and deduplicates repeated model call IDs', async () => {

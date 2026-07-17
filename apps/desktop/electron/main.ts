@@ -534,7 +534,7 @@ async function startApplication(): Promise<void> {
         inputName: countdownInputName,
         inputKind: process.platform === 'win32' ? 'text_gdiplus_v3' : 'text_ft2_source_v2',
         inputSettings: {
-          text: 'Starting Soon\n05:00',
+          text: 'Ready to Go',
           align: 'center',
           valign: 'center',
           font: { face: 'Inter', size: 72, style: 'Bold' },
@@ -651,6 +651,7 @@ async function startApplication(): Promise<void> {
         ? Promise.reject(new Error('TWITCH_NOT_CONFIGURED'))
         : twitchBridge.isLive(),
   };
+  const pendingLiveAnnouncements = new Map<string, string>();
   const liveSession = new LiveSessionCoordinator({
     obs: obsSessionPort,
     twitch: twitchSessionPort,
@@ -667,10 +668,16 @@ async function startApplication(): Promise<void> {
         }
       }
       if (projection.phase === 'live') {
-        handsFreeConversation.speak(
-          'The countdown is complete. OBS and Twitch are verified live.',
-          'LIVE_SESSION_VERIFIED',
-        );
+        const planId = projection.plan?.planId;
+        const announcement =
+          projection.plan?.mode === 'live' && planId !== undefined
+            ? pendingLiveAnnouncements.get(planId)
+            : undefined;
+        if (planId !== undefined) pendingLiveAnnouncements.delete(planId);
+        if (announcement !== undefined && twitchBridge !== undefined) {
+          void twitchBridge.sendMessage(announcement).catch(() => undefined);
+        }
+        handsFreeConversation.speak('OBS and Twitch are verified live.', 'LIVE_SESSION_VERIFIED');
       }
       if (projection.phase === 'failed') {
         handsFreeConversation.speak(
@@ -697,6 +704,9 @@ async function startApplication(): Promise<void> {
       | {
           readonly categoryQuery: string;
           readonly title?: string;
+          readonly tags: readonly string[];
+          readonly language: string;
+          readonly announcementText?: string;
           readonly countdownSeconds: number;
           readonly mode: 'dry_run' | 'live';
         }
@@ -742,12 +752,19 @@ async function startApplication(): Promise<void> {
       risk: 'reversible',
       modelName: 'live_session_auto_prepare_v1',
       description:
-        'Automatically resolve a Twitch category, provision safe ObscurPilot Starting Soon and Live OBS resources, save a profile, and prepare an immutable plan. This never starts streaming.',
+        'Resolve a Twitch category, provision OBS resources, save title/tags/language metadata, optionally queue a live chat announcement, and prepare an immutable plan. A zero countdown starts on the live scene without delay.',
       parameters: {
         type: 'object',
         properties: {
           categoryQuery: { type: 'string', minLength: 1, maxLength: 120 },
           title: { type: 'string', minLength: 1, maxLength: 140 },
+          tags: {
+            type: 'array',
+            items: { type: 'string', minLength: 1, maxLength: 25 },
+            maxItems: 10,
+          },
+          language: { type: 'string', pattern: '^[a-z]{2}$' },
+          announcementText: { type: 'string', minLength: 1, maxLength: 500 },
           countdownSeconds: { type: 'integer', minimum: 0, maximum: 3600 },
           mode: { type: 'string', enum: ['dry_run', 'live'] },
         },
@@ -758,13 +775,22 @@ async function startApplication(): Promise<void> {
         const value = stage11Record(input);
         if (
           Object.keys(value).some(
-            (key) => !['categoryQuery', 'title', 'countdownSeconds', 'mode'].includes(key),
+            (key) =>
+              ![
+                'categoryQuery',
+                'title',
+                'tags',
+                'language',
+                'announcementText',
+                'countdownSeconds',
+                'mode',
+              ].includes(key),
           )
         ) {
           throw new Error('UNKNOWN_AUTO_PREPARE_ARGUMENT');
         }
         const countdownSeconds =
-          value.countdownSeconds === undefined ? 300 : Number(value.countdownSeconds);
+          value.countdownSeconds === undefined ? 0 : Number(value.countdownSeconds);
         if (
           !Number.isInteger(countdownSeconds) ||
           countdownSeconds < 0 ||
@@ -779,6 +805,20 @@ async function startApplication(): Promise<void> {
           categoryQuery: stage11String(value, 'categoryQuery', 120),
           ...(typeof value.title === 'string' && value.title.trim()
             ? { title: value.title.trim().slice(0, 140) }
+            : {}),
+          tags: Array.isArray(value.tags)
+            ? [
+                ...new Set(
+                  value.tags.map((tag) => String(tag).trim().slice(0, 25)).filter(Boolean),
+                ),
+              ].slice(0, 10)
+            : [],
+          language:
+            typeof value.language === 'string' && /^[a-z]{2}$/iu.test(value.language.trim())
+              ? value.language.trim().toLowerCase()
+              : 'en',
+          ...(typeof value.announcementText === 'string' && value.announcementText.trim()
+            ? { announcementText: value.announcementText.trim().slice(0, 500) }
             : {}),
           countdownSeconds,
           mode: value.mode as 'dry_run' | 'live',
@@ -835,8 +875,8 @@ async function startApplication(): Promise<void> {
             title: input.title ?? category.name + ' - Live with ObscurPilot',
             categoryId: category.id,
             categoryName: category.name,
-            tags: [],
-            language: 'en',
+            tags: input.tags,
+            language: input.language,
           },
           obs: {
             sceneCollectionName: resources.snapshot.sceneCollectionName,
@@ -863,6 +903,13 @@ async function startApplication(): Promise<void> {
           activeLiveSessionProfileId: profile.profileId,
         });
         const projection = await liveSession.prepare(profile, input.mode);
+        if (
+          input.mode === 'live' &&
+          input.announcementText !== undefined &&
+          projection.plan?.planId !== undefined
+        ) {
+          pendingLiveAnnouncements.set(projection.plan.planId, input.announcementText);
+        }
         pendingVoicePreparation = undefined;
         return {
           phase: projection.phase,
@@ -1322,7 +1369,9 @@ async function startApplication(): Promise<void> {
         );
         return;
       }
-      const outcome = await reasoning.run(accepted.command, context.correlationId, context.signal);
+      const outcome = await reasoning.run(accepted.command, context.correlationId, context.signal, {
+        trustedCreatorGesture: context.source === 'ptt',
+      });
       voiceOrchestrator.setPhase({
         phase: 'completed',
         reasonCode: 'COMMAND_LOOP_COMPLETE',

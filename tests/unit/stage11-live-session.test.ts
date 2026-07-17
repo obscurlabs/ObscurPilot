@@ -110,9 +110,10 @@ describe('Stage 11 live-session safety', () => {
     await vi.waitFor(() => expect(coordinator.snapshot().phase).toBe('live'));
     expect(obs.startRecord).toHaveBeenCalledOnce();
     expect(obs.startStream).not.toHaveBeenCalled();
+    expect(obs.setCountdownText).not.toHaveBeenCalled();
     expect(twitch.updateMetadata).not.toHaveBeenCalled();
-    expect(obs.setProgramScene).toHaveBeenNthCalledWith(
-      2,
+    expect(obs.setProgramScene).toHaveBeenCalledOnce();
+    expect(obs.setProgramScene).toHaveBeenCalledWith(
       'Game',
       expect.any(String),
       expect.any(AbortSignal),

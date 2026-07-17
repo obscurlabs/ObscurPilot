@@ -14684,7 +14684,7 @@ var HandsFreePreferencesSchema = external_exports.object({
   enabled: external_exports.boolean(),
   wakePhrase: external_exports.string().trim().min(2).max(32),
   speechThreshold: external_exports.number().min(5e-3).max(0.25),
-  silenceReleaseMs: external_exports.number().int().min(350).max(3e3),
+  silenceReleaseMs: external_exports.number().int().min(250).max(3e3),
   conversationWindowMs: external_exports.number().int().min(15e3).max(9e5)
 }).strict();
 var HandsFreePhaseSchema = external_exports.enum([
