@@ -20,15 +20,15 @@ const LABELS: Record<PttProjection['phase'], string> = {
   idle: 'Hold to speak',
   arming: 'Opening microphone',
   capturing: 'Listening',
-  encoding: 'Preparing voice',
-  ready: 'Voice captured',
+  encoding: 'Processing...',
+  ready: 'Processing...',
   rejected: 'Try again',
   error: 'Microphone unavailable',
 };
 
 const AGENT_LABELS: Record<AgentInteractionProjection['phase'], string> = {
   idle: 'Hold to speak',
-  transcribing: 'Understanding voice',
+  transcribing: 'Processing...',
   reasoning: 'Planning safely',
   tool_active: 'Applying command',
   awaiting_confirmation: 'Approval required',

@@ -67,7 +67,7 @@ export const HandsFreePreferencesSchema = z
     enabled: z.boolean(),
     wakePhrase: z.string().trim().min(2).max(32),
     speechThreshold: z.number().min(0.005).max(0.25),
-    silenceReleaseMs: z.number().int().min(350).max(3_000),
+    silenceReleaseMs: z.number().int().min(250).max(3_000),
     conversationWindowMs: z.number().int().min(15_000).max(900_000),
   })
   .strict();

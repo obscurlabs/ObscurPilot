@@ -17,12 +17,13 @@ export {};
 let stream: MediaStream | undefined;
 let context: AudioContext | undefined;
 let worklet: AudioWorkletNode | undefined;
+let analyser: AnalyserNode | undefined;
 let activeSessionId: string | undefined;
 let captureGeneration = 0;
 let monitorActive = false;
 let suppressed = false;
 let speechThreshold = 0.018;
-let silenceReleaseMs = 850;
+let silenceReleaseMs = 300;
 let lastSpeechAt = 0;
 let speechStartedAt = 0;
 let preRoll: Float32Array[] = [];
@@ -100,6 +101,8 @@ async function acquire(
     context = new AudioContext({ latencyHint: 'interactive' });
     await context.audioWorklet.addModule('./audio-worklet.js');
     const source = context.createMediaStreamSource(stream);
+    analyser = context.createAnalyser();
+    analyser.fftSize = 2048;
     worklet = new AudioWorkletNode(context, 'obscurpilot-capture', {
       processorOptions: { targetSampleRate: 16_000 },
     });
@@ -121,7 +124,7 @@ async function acquire(
         void disposeCapture();
       });
     }
-    source.connect(worklet).connect(silent).connect(context.destination);
+    source.connect(analyser).connect(worklet).connect(silent).connect(context.destination);
     await context.resume();
     return generation === captureGeneration;
   } catch {
@@ -144,6 +147,22 @@ function processVad(samples: Float32Array, level: number): void {
   if (activeSessionId === undefined) {
     rememberPreRoll(samples);
     if (level < speechThreshold) return;
+    const currentAnalyser = analyser;
+    const currentContext = context;
+    if (currentAnalyser && currentContext) {
+      const bufferLength = currentAnalyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      currentAnalyser.getByteFrequencyData(dataArray);
+      const binResolution = currentContext!.sampleRate / currentAnalyser!.fftSize;
+      const minBin = Math.floor(85 / binResolution);
+      const maxBin = Math.ceil(255 / binResolution);
+      let speechSum = 0;
+      for (let i = minBin; i <= maxBin; i++) {
+        speechSum += dataArray[i] ?? 0;
+      }
+      const avgSpeech = speechSum / (maxBin - minBin + 1);
+      if (avgSpeech < 30) return;
+    }
     activeSessionId = crypto.randomUUID();
     speechStartedAt = now;
     lastSpeechAt = now;
@@ -231,6 +250,8 @@ async function disposeCapture(): Promise<void> {
 async function disposeResources(): Promise<void> {
   worklet?.disconnect();
   worklet = undefined;
+  analyser?.disconnect();
+  analyser = undefined;
   for (const track of stream?.getTracks() ?? []) track.stop();
   stream = undefined;
   if (context !== undefined) await context.close().catch(() => undefined);

@@ -69,7 +69,7 @@ export class PttAudioService {
     enabled: false,
     wakePhrase: 'Hi Obscur',
     speechThreshold: 0.018,
-    silenceReleaseMs: 850,
+    silenceReleaseMs: 300,
     conversationWindowMs: 300_000,
   });
 

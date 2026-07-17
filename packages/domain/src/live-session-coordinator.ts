@@ -246,37 +246,38 @@ export class LiveSessionCoordinator {
         activeStep: 'apply_twitch',
         completedSteps: ['preflight'],
       });
+      const obsTasks = (async () => {
+        await this.options.obs.setProgramScene(
+          profile.obs.preLiveSceneName,
+          `${plan.planId}:prelive`,
+          signal,
+        );
+        if (plan.mode === 'dry_run' || profile.obs.recording === 'on') {
+          await this.options.obs.startRecord(`${plan.planId}:record`, signal);
+        }
+        if (plan.mode === 'live') {
+          await this.options.obs.startStream(`${plan.planId}:stream`, signal);
+        }
+      })();
+
       if (plan.mode === 'live') {
-        await this.options.twitch.updateMetadata(
+        this.publish({
+          phase: 'applying_twitch',
+          reasonCode: 'APPLYING_TWITCH_AND_OBS',
+          plan,
+          activeStep: 'apply_twitch',
+          completedSteps: ['preflight'],
+        });
+        const twitchTask = this.options.twitch.updateMetadata(
           plan.plannedTwitch,
           `${plan.planId}:metadata`,
           signal,
         );
+        await Promise.all([obsTasks, twitchTask]);
         metadataApplied = true;
+      } else {
+        await obsTasks;
       }
-      this.publish({
-        phase: 'preparing_obs',
-        reasonCode: 'PREPARING_STARTING_SCENE',
-        plan,
-        activeStep: 'prepare_obs',
-        completedSteps: ['preflight', 'apply_twitch'],
-      });
-      await this.options.obs.setProgramScene(
-        profile.obs.preLiveSceneName,
-        `${plan.planId}:prelive`,
-        signal,
-      );
-      if (plan.mode === 'dry_run' || profile.obs.recording === 'on') {
-        await this.options.obs.startRecord(`${plan.planId}:record`, signal);
-      }
-      this.publish({
-        phase: 'starting_output',
-        reasonCode: plan.mode === 'live' ? 'STARTING_STREAM' : 'DRY_RUN_RECORDING',
-        plan,
-        activeStep: 'start_output',
-        completedSteps: ['preflight', 'apply_twitch', 'prepare_obs'],
-      });
-      if (plan.mode === 'live') await this.options.obs.startStream(`${plan.planId}:stream`, signal);
       this.publish({
         phase: 'verifying_live',
         reasonCode: 'VERIFYING_AUTHORITATIVE_OUTPUTS',

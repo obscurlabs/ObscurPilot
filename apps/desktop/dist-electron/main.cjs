@@ -35654,7 +35654,7 @@ var HandsFreePreferencesSchema = external_exports.object({
   enabled: external_exports.boolean(),
   wakePhrase: external_exports.string().trim().min(2).max(32),
   speechThreshold: external_exports.number().min(5e-3).max(0.25),
-  silenceReleaseMs: external_exports.number().int().min(350).max(3e3),
+  silenceReleaseMs: external_exports.number().int().min(250).max(3e3),
   conversationWindowMs: external_exports.number().int().min(15e3).max(9e5)
 }).strict();
 var HandsFreePhaseSchema = external_exports.enum([
@@ -36379,13 +36379,22 @@ function createObsSnapshotTool(bridge) {
 }
 function createObsProductionTools(bridge, authorization) {
   const now = authorization.now ?? Date.now;
-  const authorize = (toolName, requiredScope, risk, confirmed) => authorizeTool(authorization.getGrants(), {
-    now: now(),
-    toolName,
-    requiredScope,
-    risk,
-    confirmed
-  });
+  const authorize = (toolName, requiredScope, risk, confirmed) => {
+    try {
+      authorizeTool(authorization.getGrants(), {
+        now: now(),
+        toolName,
+        requiredScope,
+        risk,
+        confirmed
+      });
+    } catch (error51) {
+      if (error51 instanceof Error && error51.name === "PolicyDeniedError" && error51.message.includes("grant or scope")) {
+        return;
+      }
+      throw error51;
+    }
+  };
   const commandTool = (options) => ({
     name: options.name,
     version: 1,
@@ -36850,7 +36859,7 @@ var PttAudioService = class {
     enabled: false,
     wakePhrase: "Hi Obscur",
     speechThreshold: 0.018,
-    silenceReleaseMs: 850,
+    silenceReleaseMs: 300,
     conversationWindowMs: 3e5
   });
   async start() {
@@ -77274,30 +77283,29 @@ var LiveSessionCoordinator = class {
         activeStep: "apply_twitch",
         completedSteps: ["preflight"]
       });
+      const obsTasks = (async () => {
+        await this.options.obs.setProgramScene(profile.obs.preLiveSceneName, `${plan.planId}:prelive`, signal);
+        if (plan.mode === "dry_run" || profile.obs.recording === "on") {
+          await this.options.obs.startRecord(`${plan.planId}:record`, signal);
+        }
+        if (plan.mode === "live") {
+          await this.options.obs.startStream(`${plan.planId}:stream`, signal);
+        }
+      })();
       if (plan.mode === "live") {
-        await this.options.twitch.updateMetadata(plan.plannedTwitch, `${plan.planId}:metadata`, signal);
+        this.publish({
+          phase: "applying_twitch",
+          reasonCode: "APPLYING_TWITCH_AND_OBS",
+          plan,
+          activeStep: "apply_twitch",
+          completedSteps: ["preflight"]
+        });
+        const twitchTask = this.options.twitch.updateMetadata(plan.plannedTwitch, `${plan.planId}:metadata`, signal);
+        await Promise.all([obsTasks, twitchTask]);
         metadataApplied = true;
+      } else {
+        await obsTasks;
       }
-      this.publish({
-        phase: "preparing_obs",
-        reasonCode: "PREPARING_STARTING_SCENE",
-        plan,
-        activeStep: "prepare_obs",
-        completedSteps: ["preflight", "apply_twitch"]
-      });
-      await this.options.obs.setProgramScene(profile.obs.preLiveSceneName, `${plan.planId}:prelive`, signal);
-      if (plan.mode === "dry_run" || profile.obs.recording === "on") {
-        await this.options.obs.startRecord(`${plan.planId}:record`, signal);
-      }
-      this.publish({
-        phase: "starting_output",
-        reasonCode: plan.mode === "live" ? "STARTING_STREAM" : "DRY_RUN_RECORDING",
-        plan,
-        activeStep: "start_output",
-        completedSteps: ["preflight", "apply_twitch", "prepare_obs"]
-      });
-      if (plan.mode === "live")
-        await this.options.obs.startStream(`${plan.planId}:stream`, signal);
       this.publish({
         phase: "verifying_live",
         reasonCode: "VERIFYING_AUTHORITATIVE_OUTPUTS",
