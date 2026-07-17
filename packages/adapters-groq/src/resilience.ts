@@ -6,26 +6,32 @@ export interface GroqResilienceOptions {
   readonly maxAttempts?: number;
   readonly baseDelayMs?: number;
   readonly maxDelayMs?: number;
+  readonly maxRetryAfterMs?: number;
   readonly random?: () => number;
   readonly now?: () => number;
   readonly circuitBreaker?: CircuitBreaker;
+  readonly sleep?: (delayMs: number, signal: AbortSignal) => Promise<void>;
 }
 
 export class GroqResiliencePolicy {
   private readonly maxAttempts: number;
   private readonly baseDelayMs: number;
   private readonly maxDelayMs: number;
+  private readonly maxRetryAfterMs: number;
   private readonly random: () => number;
   private readonly now: () => number;
   private readonly circuit: CircuitBreaker;
+  private readonly sleep: (delayMs: number, signal: AbortSignal) => Promise<void>;
 
   public constructor(options: GroqResilienceOptions = {}) {
     this.maxAttempts = options.maxAttempts ?? 3;
-    this.baseDelayMs = options.baseDelayMs ?? 200;
-    this.maxDelayMs = options.maxDelayMs ?? 2_000;
+    this.baseDelayMs = options.baseDelayMs ?? 1_000;
+    this.maxDelayMs = options.maxDelayMs ?? 30_000;
+    this.maxRetryAfterMs = options.maxRetryAfterMs ?? 60_000;
     this.random = options.random ?? Math.random;
     this.now = options.now ?? Date.now;
     this.circuit = options.circuitBreaker ?? new CircuitBreaker();
+    this.sleep = options.sleep ?? sleepWithSignal;
   }
 
   public async execute<T>(
@@ -48,12 +54,13 @@ export class GroqResiliencePolicy {
         const fault = translateGroqError(error, signal);
         if (fault.retryable) this.circuit.recordFailure(this.now());
         if (!fault.retryable || attempt >= this.maxAttempts) throw fault;
-        const delayMs = computeFullJitterDelay(attempt - 1, this.random, {
+        const exponentialDelayMs = computeFullJitterDelay(attempt - 1, this.random, {
           baseDelayMs: this.baseDelayMs,
           maxDelayMs: this.maxDelayMs,
           maxAttempts: this.maxAttempts,
         });
-        await sleepWithSignal(delayMs, signal);
+        const providerDelayMs = Math.min(fault.retryAfterMs ?? 0, this.maxRetryAfterMs);
+        await this.sleep(Math.max(exponentialDelayMs, providerDelayMs), signal);
       }
     }
     throw new GroqAdapterError('UPSTREAM_UNAVAILABLE', 'Groq operation failed');

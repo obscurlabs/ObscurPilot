@@ -75921,10 +75921,12 @@ function createGroqClient(options) {
 var GroqAdapterError = class extends Error {
   code;
   retryable;
-  constructor(code, message, retryable = false) {
+  retryAfterMs;
+  constructor(code, message, retryable = false, retryAfterMs2) {
     super(message);
     this.code = code;
     this.retryable = retryable;
+    this.retryAfterMs = retryAfterMs2;
     this.name = "GroqAdapterError";
   }
 };
@@ -75952,7 +75954,7 @@ function translateGroqError(error51, externalSignal) {
       return new GroqAdapterError("TIMEOUT", "Groq request deadline elapsed", true);
     }
     if (status === 429) {
-      return new GroqAdapterError("RATE_LIMITED", "Groq rate limit reached", true);
+      return new GroqAdapterError("RATE_LIMITED", "Groq rate limit reached", true, retryAfterMs(error51.headers));
     }
     if (typeof status === "number" && status >= 500) {
       return new GroqAdapterError("UPSTREAM_UNAVAILABLE", "Groq service is temporarily unavailable", true);
@@ -75960,6 +75962,31 @@ function translateGroqError(error51, externalSignal) {
     return new GroqAdapterError("UPSTREAM_REJECTED", "Groq rejected the request");
   }
   return new GroqAdapterError("UPSTREAM_UNAVAILABLE", "Groq operation failed");
+}
+function retryAfterMs(headers) {
+  if (headers === void 0)
+    return void 0;
+  const retryAfter = headers.get("retry-after");
+  if (retryAfter !== null) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0)
+      return Math.round(seconds * 1e3);
+    const dateMs = Date.parse(retryAfter);
+    if (Number.isFinite(dateMs))
+      return Math.max(0, dateMs - Date.now());
+  }
+  return parseDurationHeader(headers.get("x-ratelimit-reset-requests"));
+}
+function parseDurationHeader(value) {
+  if (value === null)
+    return void 0;
+  const match = /^(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?$/u.exec(value.trim());
+  if (match === null || match[1] === void 0 && match[2] === void 0)
+    return void 0;
+  const minutes = Number(match[1] ?? 0);
+  const seconds = Number(match[2] ?? 0);
+  const durationMs = Math.round((minutes * 60 + seconds) * 1e3);
+  return Number.isFinite(durationMs) && durationMs >= 0 ? durationMs : void 0;
 }
 function isAbortError2(error51) {
   return error51 instanceof DOMException && error51.name === "AbortError";
@@ -76064,16 +76091,20 @@ var GroqResiliencePolicy = class {
   maxAttempts;
   baseDelayMs;
   maxDelayMs;
+  maxRetryAfterMs;
   random;
   now;
   circuit;
+  sleep;
   constructor(options = {}) {
     this.maxAttempts = options.maxAttempts ?? 3;
-    this.baseDelayMs = options.baseDelayMs ?? 200;
-    this.maxDelayMs = options.maxDelayMs ?? 2e3;
+    this.baseDelayMs = options.baseDelayMs ?? 1e3;
+    this.maxDelayMs = options.maxDelayMs ?? 3e4;
+    this.maxRetryAfterMs = options.maxRetryAfterMs ?? 6e4;
     this.random = options.random ?? Math.random;
     this.now = options.now ?? Date.now;
     this.circuit = options.circuitBreaker ?? new CircuitBreaker();
+    this.sleep = options.sleep ?? sleepWithSignal;
   }
   async execute(operation2, signal) {
     if (!this.circuit.canExecute(this.now())) {
@@ -76092,12 +76123,13 @@ var GroqResiliencePolicy = class {
           this.circuit.recordFailure(this.now());
         if (!fault.retryable || attempt >= this.maxAttempts)
           throw fault;
-        const delayMs = computeFullJitterDelay(attempt - 1, this.random, {
+        const exponentialDelayMs = computeFullJitterDelay(attempt - 1, this.random, {
           baseDelayMs: this.baseDelayMs,
           maxDelayMs: this.maxDelayMs,
           maxAttempts: this.maxAttempts
         });
-        await sleepWithSignal(delayMs, signal);
+        const providerDelayMs = Math.min(fault.retryAfterMs ?? 0, this.maxRetryAfterMs);
+        await this.sleep(Math.max(exponentialDelayMs, providerDelayMs), signal);
       }
     }
     throw new GroqAdapterError("UPSTREAM_UNAVAILABLE", "Groq operation failed");
@@ -77779,7 +77811,11 @@ async function startApplication() {
   const voiceOrchestrator = groqClient === void 0 ? void 0 : new VoiceOrchestrator({
     transcription: new GroqTranscriptionAdapter({
       model: environment.GROQ_STT_MODEL,
-      transport: createSdkTranscriptionTransport(groqClient)
+      transport: createSdkTranscriptionTransport(groqClient),
+      maxAttempts: 4,
+      baseDelayMs: 1e3,
+      maxDelayMs: 3e4,
+      maxRetryAfterMs: 6e4
     }),
     onProjection: (projection) => {
       handsFreeConversation.syncAgent(projection);
@@ -78632,8 +78668,12 @@ async function startApplication() {
     const reasoning = new GuardedReasoningOrchestrator({
       reasoning: new GroqReasoningAdapter({
         primaryModel: environment.GROQ_REASONING_MODEL,
-        ...environment.GROQ_REASONING_FALLBACK_MODEL === void 0 ? {} : { fallbackModel: environment.GROQ_REASONING_FALLBACK_MODEL },
-        transport: createSdkReasoningTransport(groqClient)
+        fallbackModel: environment.GROQ_REASONING_FALLBACK_MODEL ?? (environment.GROQ_REASONING_MODEL === "openai/gpt-oss-120b" ? "qwen/qwen3.6-27b" : "openai/gpt-oss-120b"),
+        transport: createSdkReasoningTransport(groqClient),
+        maxAttempts: 3,
+        baseDelayMs: 1e3,
+        maxDelayMs: 3e4,
+        maxRetryAfterMs: 6e4
       }),
       registry: registry2,
       limits: {

@@ -22,6 +22,12 @@ export class GroqAdapterError extends Error {
     public readonly code: GroqFaultCode,
     message: string,
     public readonly retryable = false,
+    /**
+     * Provider-directed delay before a retry. This is deliberately kept on the
+     * boundary fault, rather than surfaced to the renderer, so callers cannot
+     * accidentally retry a command ahead of the provider's reset window.
+     */
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'GroqAdapterError';
@@ -51,7 +57,12 @@ export function translateGroqError(error: unknown, externalSignal?: AbortSignal)
       return new GroqAdapterError('TIMEOUT', 'Groq request deadline elapsed', true);
     }
     if (status === 429) {
-      return new GroqAdapterError('RATE_LIMITED', 'Groq rate limit reached', true);
+      return new GroqAdapterError(
+        'RATE_LIMITED',
+        'Groq rate limit reached',
+        true,
+        retryAfterMs(error.headers),
+      );
     }
     if (typeof status === 'number' && status >= 500) {
       return new GroqAdapterError(
@@ -63,6 +74,30 @@ export function translateGroqError(error: unknown, externalSignal?: AbortSignal)
     return new GroqAdapterError('UPSTREAM_REJECTED', 'Groq rejected the request');
   }
   return new GroqAdapterError('UPSTREAM_UNAVAILABLE', 'Groq operation failed');
+}
+
+function retryAfterMs(headers: Headers | undefined): number | undefined {
+  if (headers === undefined) return undefined;
+  const retryAfter = headers.get('retry-after');
+  if (retryAfter !== null) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1_000);
+    const dateMs = Date.parse(retryAfter);
+    if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
+  }
+
+  // Groq also returns this duration-form reset header on quota responses.
+  return parseDurationHeader(headers.get('x-ratelimit-reset-requests'));
+}
+
+function parseDurationHeader(value: string | null): number | undefined {
+  if (value === null) return undefined;
+  const match = /^(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?$/u.exec(value.trim());
+  if (match === null || (match[1] === undefined && match[2] === undefined)) return undefined;
+  const minutes = Number(match[1] ?? 0);
+  const seconds = Number(match[2] ?? 0);
+  const durationMs = Math.round((minutes * 60 + seconds) * 1_000);
+  return Number.isFinite(durationMs) && durationMs >= 0 ? durationMs : undefined;
 }
 
 function isAbortError(error: unknown): boolean {

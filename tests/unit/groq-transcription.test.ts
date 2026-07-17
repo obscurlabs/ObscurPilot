@@ -121,6 +121,29 @@ describe('Groq transcription boundary', () => {
     expect(auth).toHaveBeenCalledOnce();
   });
 
+  it('honors a provider retry window before retrying a rate-limited request', async () => {
+    const delays: number[] = [];
+    const request = vi
+      .fn<TranscriptionTransport['transcribe']>()
+      .mockRejectedValueOnce(
+        new APIError(429, {}, 'rate limited', new Headers({ 'retry-after': '3' })),
+      )
+      .mockResolvedValueOnce({ text: 'recovered after provider window' });
+
+    await expect(
+      adapter(request, {
+        maxAttempts: 2,
+        random: () => 0,
+        sleep: async (delayMs) => {
+          delays.push(delayMs);
+        },
+      }).transcribe(clip(), id, new AbortController().signal),
+    ).resolves.toMatchObject({ attempts: 2 });
+
+    expect(delays).toEqual([3_000]);
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps transcript and audio content out of operational diagnostics', async () => {
     const events: unknown[] = [];
     const secretTranscript = 'private spoken command';

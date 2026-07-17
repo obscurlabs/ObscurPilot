@@ -324,6 +324,10 @@ async function startApplication(): Promise<void> {
           transcription: new GroqTranscriptionAdapter({
             model: environment.GROQ_STT_MODEL,
             transport: createSdkTranscriptionTransport(groqClient),
+            maxAttempts: 4,
+            baseDelayMs: 1_000,
+            maxDelayMs: 30_000,
+            maxRetryAfterMs: 60_000,
           }),
           onProjection: (projection) => {
             handsFreeConversation.syncAgent(projection);
@@ -1301,10 +1305,16 @@ async function startApplication(): Promise<void> {
     const reasoning = new GuardedReasoningOrchestrator({
       reasoning: new GroqReasoningAdapter({
         primaryModel: environment.GROQ_REASONING_MODEL,
-        ...(environment.GROQ_REASONING_FALLBACK_MODEL === undefined
-          ? {}
-          : { fallbackModel: environment.GROQ_REASONING_FALLBACK_MODEL }),
+        fallbackModel:
+          environment.GROQ_REASONING_FALLBACK_MODEL ??
+          (environment.GROQ_REASONING_MODEL === 'openai/gpt-oss-120b'
+            ? 'qwen/qwen3.6-27b'
+            : 'openai/gpt-oss-120b'),
         transport: createSdkReasoningTransport(groqClient),
+        maxAttempts: 3,
+        baseDelayMs: 1_000,
+        maxDelayMs: 30_000,
+        maxRetryAfterMs: 60_000,
       }),
       registry,
       limits: {
