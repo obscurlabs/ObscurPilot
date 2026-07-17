@@ -17,9 +17,9 @@ const INITIAL_AGENT: AgentInteractionProjection = {
 };
 
 const LABELS: Record<PttProjection['phase'], string> = {
-  idle: 'Hold to speak',
+  idle: 'Tap to talk',
   arming: 'Opening microphone',
-  capturing: 'Listening',
+  capturing: 'Listening - pause to send',
   encoding: 'Preparing voice',
   ready: 'Voice captured',
   rejected: 'Try again',
@@ -27,7 +27,7 @@ const LABELS: Record<PttProjection['phase'], string> = {
 };
 
 const AGENT_LABELS: Record<AgentInteractionProjection['phase'], string> = {
-  idle: 'Hold to speak',
+  idle: 'Tap to talk',
   transcribing: 'Understanding voice',
   reasoning: 'Planning safely',
   tool_active: 'Applying command',
@@ -58,7 +58,6 @@ export function VoicePresence({
   const [decisionNotice, setDecisionNotice] = useState<string>();
   const [clock, setClock] = useState(() => Date.now());
   const orbRef = useRef<HTMLSpanElement>(null);
-  const pressedRef = useRef(false);
 
   useEffect(
     () =>
@@ -127,15 +126,9 @@ export function VoicePresence({
     }
   };
 
-  const press = () => {
-    if (pressedRef.current) return;
-    pressedRef.current = true;
-    void window.obscurPilot.commandPtt('press');
-  };
-  const release = () => {
-    if (!pressedRef.current) return;
-    pressedRef.current = false;
-    void window.obscurPilot.commandPtt('release');
+  const toggleTapToTalk = () => {
+    const captureActive = projection.phase === 'arming' || projection.phase === 'capturing';
+    void window.obscurPilot.commandPtt(captureActive ? 'cancel' : 'tap');
   };
 
   const agentActive = agent.phase !== 'idle';
@@ -160,36 +153,20 @@ export function VoicePresence({
         <p className="eyebrow">Voice boundary</p>
         <h2 id="voice-presence-title">Agent presence</h2>
         <p className="voice-copy">
-          Hold the control while speaking. The global shortcut toggles capture when this window is
-          not focused.
+          Tap once, speak the complete production command, then pause. ObscurPilot sends it
+          automatically after silence; tap again to cancel.
         </p>
       </div>
       <button
         className="voice-control"
         data-phase={visualPhase}
-        aria-label="Hold to speak"
-        onPointerDown={(event) => {
-          if (event.button !== 0) return;
-          event.currentTarget.setPointerCapture(event.pointerId);
-          press();
-        }}
-        onPointerUp={release}
-        onPointerCancel={() => {
-          pressedRef.current = false;
-          void window.obscurPilot.commandPtt('cancel');
-        }}
-        onKeyDown={(event) => {
-          if (!event.repeat && (event.key === ' ' || event.key === 'Enter')) {
-            event.preventDefault();
-            press();
-          }
-        }}
-        onKeyUp={(event) => {
-          if (event.key === ' ' || event.key === 'Enter') {
-            event.preventDefault();
-            release();
-          }
-        }}
+        aria-label={
+          projection.phase === 'arming' || projection.phase === 'capturing'
+            ? 'Cancel listening'
+            : 'Tap to talk'
+        }
+        aria-pressed={projection.phase === 'arming' || projection.phase === 'capturing'}
+        onClick={toggleTapToTalk}
       >
         <span className="orb-shell" ref={orbRef} aria-hidden="true">
           <span className="orb-ring orb-ring-outer" />

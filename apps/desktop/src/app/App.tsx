@@ -343,7 +343,7 @@ export function App() {
   const [twitchNotice, setTwitchNotice] = useState<string>();
   const { preferences, updatePreferences, resetPreferences } = useUiPreferences();
   const preferencesRef = useRef(preferences);
-  const handsFreeEnabledRef = useRef(true);
+  const handsFreeEnabledRef = useRef(false);
   const pendingActivitiesRef = useRef<ActivityItem[]>([]);
   const activityFrameRef = useRef<number | undefined>(undefined);
   const [speechQueue] = useState(() => createBrowserSpeechQueue(setSpeechFallback));
@@ -661,7 +661,7 @@ export function App() {
               </div>
               <div className="topbar-status">
                 <span className="topbar-status-label">Production control board</span>
-                <Badge tone="ready">Stage 11.1 · Hands-free ready</Badge>
+                <Badge tone="ready">Stage 11.1 · Tap-to-talk ready</Badge>
               </div>
             </header>
 

@@ -1,5 +1,12 @@
 type AudioCommand =
   | { readonly kind: 'start'; readonly sessionId: string; readonly deviceId: string }
+  | {
+      readonly kind: 'listen-once';
+      readonly sessionId: string;
+      readonly deviceId: string;
+      readonly speechThreshold: number;
+      readonly silenceReleaseMs: number;
+    }
   | { readonly kind: 'stop'; readonly sessionId: string }
   | { readonly kind: 'cancel'; readonly sessionId: string }
   | { readonly kind: 'list-devices'; readonly requestId: string }
@@ -18,6 +25,7 @@ let stream: MediaStream | undefined;
 let context: AudioContext | undefined;
 let worklet: AudioWorkletNode | undefined;
 let activeSessionId: string | undefined;
+let oneShotSessionId: string | undefined;
 let captureGeneration = 0;
 let monitorActive = false;
 let suppressed = false;
@@ -33,6 +41,11 @@ const MAX_UTTERANCE_MS = 30_000;
 window.obscurPilotAudio.onCommand((raw) => {
   const command = raw as AudioCommand;
   if (command.kind === 'start') void startManual(command.sessionId, command.deviceId);
+  if (command.kind === 'listen-once') {
+    speechThreshold = command.speechThreshold;
+    silenceReleaseMs = command.silenceReleaseMs;
+    void startOneShot(command.sessionId, command.deviceId);
+  }
   if (command.kind === 'stop') void stopManual(command.sessionId, true);
   if (command.kind === 'cancel') void stopManual(command.sessionId, false);
   if (command.kind === 'list-devices') void listDevices(command.requestId);
@@ -50,6 +63,7 @@ window.obscurPilotAudio.onCommand((raw) => {
 
 async function startManual(sessionId: string, deviceId: string): Promise<void> {
   monitorActive = false;
+  oneShotSessionId = undefined;
   activeSessionId = sessionId;
   const generation = ++captureGeneration;
   const ready = await acquire(deviceId, generation, (samples, level) => {
@@ -61,8 +75,23 @@ async function startManual(sessionId: string, deviceId: string): Promise<void> {
   }
 }
 
+async function startOneShot(sessionId: string, deviceId: string): Promise<void> {
+  monitorActive = true;
+  oneShotSessionId = sessionId;
+  activeSessionId = undefined;
+  suppressed = false;
+  resetVad();
+  const generation = ++captureGeneration;
+  window.obscurPilotAudio.emit({ kind: 'started', sessionId });
+  const ready = await acquire(deviceId, generation, processVad);
+  if (!ready && generation === captureGeneration && oneShotSessionId === sessionId) {
+    window.obscurPilotAudio.emit({ kind: 'interrupted', sessionId, reasonCode: 'CAPTURE_FAILED' });
+  }
+}
+
 async function startMonitor(deviceId: string): Promise<void> {
   monitorActive = true;
+  oneShotSessionId = undefined;
   activeSessionId = undefined;
   suppressed = false;
   resetVad();
@@ -111,10 +140,11 @@ async function acquire(
     for (const track of stream.getAudioTracks()) {
       track.addEventListener('ended', () => {
         if (generation !== captureGeneration) return;
-        if (activeSessionId !== undefined) {
+        const interruptedSessionId = activeSessionId ?? oneShotSessionId;
+        if (interruptedSessionId !== undefined) {
           window.obscurPilotAudio.emit({
             kind: 'interrupted',
-            sessionId: activeSessionId,
+            sessionId: interruptedSessionId,
             reasonCode: 'DEVICE_LOST',
           });
         }
@@ -126,10 +156,11 @@ async function acquire(
     return generation === captureGeneration;
   } catch {
     if (generation !== captureGeneration) return false;
-    if (activeSessionId !== undefined) {
+    const interruptedSessionId = activeSessionId ?? oneShotSessionId;
+    if (interruptedSessionId !== undefined) {
       window.obscurPilotAudio.emit({
         kind: 'interrupted',
-        sessionId: activeSessionId,
+        sessionId: interruptedSessionId,
         reasonCode: 'CAPTURE_FAILED',
       });
     }
@@ -144,10 +175,12 @@ function processVad(samples: Float32Array, level: number): void {
   if (activeSessionId === undefined) {
     rememberPreRoll(samples);
     if (level < speechThreshold) return;
-    activeSessionId = crypto.randomUUID();
+    activeSessionId = oneShotSessionId ?? crypto.randomUUID();
     speechStartedAt = now;
     lastSpeechAt = now;
-    window.obscurPilotAudio.emit({ kind: 'utterance-started', sessionId: activeSessionId });
+    if (oneShotSessionId === undefined) {
+      window.obscurPilotAudio.emit({ kind: 'utterance-started', sessionId: activeSessionId });
+    }
     for (const chunk of preRoll) {
       window.obscurPilotAudio.emit({
         kind: 'samples',
@@ -179,9 +212,16 @@ function rememberPreRoll(samples: Float32Array): void {
 function finishUtterance(): void {
   const sessionId = activeSessionId;
   if (sessionId === undefined || !monitorActive) return;
+  const oneShot = oneShotSessionId === sessionId;
   activeSessionId = undefined;
-  window.obscurPilotAudio.emit({ kind: 'utterance-stopped', sessionId });
+  window.obscurPilotAudio.emit({ kind: oneShot ? 'stopped' : 'utterance-stopped', sessionId });
   resetVad();
+  if (oneShot) {
+    oneShotSessionId = undefined;
+    monitorActive = false;
+    captureGeneration += 1;
+    void disposeResources();
+  }
 }
 
 function resetVad(): void {
@@ -192,14 +232,20 @@ function resetVad(): void {
 }
 
 async function stopManual(sessionId: string, finalize: boolean): Promise<void> {
-  if (activeSessionId !== sessionId) return;
+  if (activeSessionId !== sessionId && oneShotSessionId !== sessionId) return;
   captureGeneration += 1;
+  monitorActive = false;
+  oneShotSessionId = undefined;
   await disposeCapture();
   window.obscurPilotAudio.emit({ kind: finalize ? 'stopped' : 'cancelled', sessionId });
 }
 
 async function stopMonitor(): Promise<void> {
   if (!monitorActive) return;
+  if (oneShotSessionId !== undefined) {
+    await stopManual(oneShotSessionId, false);
+    return;
+  }
   finishUtterance();
   monitorActive = false;
   captureGeneration += 1;
@@ -224,6 +270,7 @@ async function listDevices(requestId: string): Promise<void> {
 
 async function disposeCapture(): Promise<void> {
   activeSessionId = undefined;
+  oneShotSessionId = undefined;
   resetVad();
   await disposeResources();
 }

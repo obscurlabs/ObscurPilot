@@ -252,7 +252,13 @@ async function startApplication(): Promise<void> {
 
   const captureWindow = await createAudioCaptureWindow(isDevelopment, developmentServerUrl);
   const settings = new SecureSettingsStore(resolve(app.getPath('userData'), 'secure-settings.enc'));
-  const persistedSettings = await settings.load();
+  const loadedSettings = await settings.load();
+  if (loadedSettings.handsFree.enabled) {
+    await settings.update({
+      handsFree: { ...loadedSettings.handsFree, enabled: false },
+    });
+  }
+  const persistedSettings = settings.snapshot();
   const audioServiceRef: { current?: PttAudioService } = {};
   let audioSuppressedForSpeech = false;
   const handsFreeConversation = new HandsFreeConversation(
@@ -534,7 +540,7 @@ async function startApplication(): Promise<void> {
         inputName: countdownInputName,
         inputKind: process.platform === 'win32' ? 'text_gdiplus_v3' : 'text_ft2_source_v2',
         inputSettings: {
-          text: 'Starting Soon\n05:00',
+          text: 'Ready to Go',
           align: 'center',
           valign: 'center',
           font: { face: 'Inter', size: 72, style: 'Bold' },
@@ -667,10 +673,7 @@ async function startApplication(): Promise<void> {
         }
       }
       if (projection.phase === 'live') {
-        handsFreeConversation.speak(
-          'The countdown is complete. OBS and Twitch are verified live.',
-          'LIVE_SESSION_VERIFIED',
-        );
+        handsFreeConversation.speak('OBS and Twitch are verified live.', 'LIVE_SESSION_VERIFIED');
       }
       if (projection.phase === 'failed') {
         handsFreeConversation.speak(
@@ -742,7 +745,7 @@ async function startApplication(): Promise<void> {
       risk: 'reversible',
       modelName: 'live_session_auto_prepare_v1',
       description:
-        'Automatically resolve a Twitch category, provision safe ObscurPilot Starting Soon and Live OBS resources, save a profile, and prepare an immutable plan. This never starts streaming.',
+        'Automatically resolve a Twitch category, provision safe ObscurPilot OBS resources, save a profile, and prepare an immutable plan. Starts with no delay unless countdownSeconds is explicitly greater than zero. This never starts streaming.',
       parameters: {
         type: 'object',
         properties: {
@@ -764,7 +767,7 @@ async function startApplication(): Promise<void> {
           throw new Error('UNKNOWN_AUTO_PREPARE_ARGUMENT');
         }
         const countdownSeconds =
-          value.countdownSeconds === undefined ? 300 : Number(value.countdownSeconds);
+          value.countdownSeconds === undefined ? 0 : Number(value.countdownSeconds);
         if (
           !Number.isInteger(countdownSeconds) ||
           countdownSeconds < 0 ||
@@ -1322,7 +1325,9 @@ async function startApplication(): Promise<void> {
         );
         return;
       }
-      const outcome = await reasoning.run(accepted.command, context.correlationId, context.signal);
+      const outcome = await reasoning.run(accepted.command, context.correlationId, context.signal, {
+        trustedCreatorGesture: context.source === 'ptt',
+      });
       voiceOrchestrator.setPhase({
         phase: 'completed',
         reasonCode: 'COMMAND_LOOP_COMPLETE',
@@ -1377,6 +1382,15 @@ async function startApplication(): Promise<void> {
       resultSchema: OperationAcceptedSchema,
       isTrustedSender: trustedSender,
       handler: ({ payload }) => {
+        if (payload.action === 'tap') {
+          const phase = activeAudioService.projection().phase;
+          if (phase === 'arming' || phase === 'capturing') {
+            activeAudioService.cancel();
+          } else {
+            voiceOrchestrator?.cancel('SUPERSEDED');
+            activeAudioService.tap();
+          }
+        }
         if (payload.action === 'press') {
           voiceOrchestrator?.cancel('SUPERSEDED');
           activeAudioService.press();

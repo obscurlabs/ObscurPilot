@@ -95,7 +95,7 @@ export class HandsFreeConversation {
     }
     if (agent.phase === 'awaiting_confirmation') {
       this.speak(
-        'The production plan is ready. Say yes to start the broadcast and five minute countdown, or say no to cancel.',
+        'The production plan is ready. Say yes to start the broadcast immediately, or say no to cancel.',
         'VOICE_CONFIRMATION_REQUIRED',
       );
     }

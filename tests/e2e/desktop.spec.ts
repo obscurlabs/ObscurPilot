@@ -76,14 +76,14 @@ async function expectNarrowRendererBoundary(page: Page): Promise<void> {
     processType: 'undefined',
   });
 
-  await expect(page.getByText('Stage 11.1 · Hands-free ready')).toBeVisible();
+  await expect(page.getByText('Stage 11.1 · Tap-to-talk ready')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Control board sections' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Command', exact: true })).toHaveAttribute(
     'aria-current',
     'page',
   );
   await expect(page.getByRole('region', { name: 'Provider readiness' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Hold to speak' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Tap to talk' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Connection supervisors' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Activity timeline' })).toBeVisible();
   await expect(page.getByRole('form', { name: 'Activity timeline filters' })).toBeVisible();

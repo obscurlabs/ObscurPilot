@@ -14,7 +14,7 @@ const SettingsSchema = z
     accelerator: z.string().min(1).max(64).default('CommandOrControl+Shift+Space'),
     audioDeviceId: z.string().min(1).max(512).default('default'),
     handsFree: HandsFreePreferencesSchema.default({
-      enabled: true,
+      enabled: false,
       wakePhrase: 'Hi Obscur',
       speechThreshold: 0.018,
       silenceReleaseMs: 850,

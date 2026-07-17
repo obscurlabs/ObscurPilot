@@ -14668,7 +14668,7 @@ var PttProjectionSchema = external_exports.object({
     truncated: external_exports.boolean()
   }).strict().optional()
 }).strict();
-var PttCommandPayloadSchema = external_exports.object({ action: external_exports.enum(["press", "release", "cancel"]) }).strict();
+var PttCommandPayloadSchema = external_exports.object({ action: external_exports.enum(["tap", "press", "release", "cancel"]) }).strict();
 var SetPttAcceleratorPayloadSchema = external_exports.object({ accelerator: external_exports.string().trim().min(1).max(64) }).strict();
 var AudioDeviceSchema = external_exports.object({
   deviceId: external_exports.string().min(1).max(512),

@@ -12,9 +12,9 @@ const AGENT: AgentInteractionProjection = {
   elapsedMs: 0,
 };
 const HANDS_FREE: HandsFreeProjection = {
-  phase: 'arming',
-  reasonCode: 'MICROPHONE_ARMING',
-  enabled: true,
+  phase: 'disabled',
+  reasonCode: 'TAP_TO_TALK_MODE',
+  enabled: false,
   wakePhrase: 'Hi Obscur',
   level: 0,
   sessionActive: false,

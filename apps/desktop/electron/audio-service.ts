@@ -119,6 +119,22 @@ export class PttAudioService {
     this.watchdog.unref?.();
   }
 
+  public tap(): void {
+    this.captureWindow.webContents.send(INTERNAL_COMMAND, { kind: 'monitor-stop' });
+    const sessionId = this.pipeline.press();
+    if (sessionId === undefined) return;
+    this.captureWindow.webContents.send(INTERNAL_COMMAND, {
+      kind: 'listen-once',
+      sessionId,
+      deviceId: this.settings.snapshot().audioDeviceId,
+      speechThreshold: this.handsFree.speechThreshold,
+      silenceReleaseMs: this.handsFree.silenceReleaseMs,
+    });
+    clearTimeout(this.watchdog);
+    this.watchdog = setTimeout(() => this.release(), 30_250);
+    this.watchdog.unref?.();
+  }
+
   public release(): void {
     const projection = this.pipeline.projection();
     if (projection.sessionId === undefined || !['arming', 'capturing'].includes(projection.phase)) {
@@ -267,8 +283,8 @@ export class PttAudioService {
     if (accelerator === this.accelerator) return;
     const registered = globalShortcut.register(accelerator, () => {
       const phase = this.pipeline.projection().phase;
-      if (phase === 'arming' || phase === 'capturing') this.release();
-      else this.press();
+      if (phase === 'arming' || phase === 'capturing') this.cancel();
+      else this.tap();
     });
     if (!registered) throw new Error('Push-to-talk accelerator is unavailable');
     if (this.accelerator !== '') globalShortcut.unregister(this.accelerator);

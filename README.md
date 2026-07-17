@@ -46,7 +46,7 @@ The next gate is Stage 11 complete OBS/Twitch live-session orchestration, chat i
 
 - Electron + React + TypeScript + Vite
 - Tailwind CSS + shadcn/ui
-- Groq `whisper-large-v3-turbo` for push-to-talk transcription
+- Groq `whisper-large-v3-turbo` for one-tap, silence-finalized voice transcription
 - Groq `openai/gpt-oss-120b` or `qwen/qwen3.6-27b` for tool-oriented reasoning
 - Web Speech API for local spoken feedback
 - `obs-websocket-js` for local OBS JSON-RPC on port 4455

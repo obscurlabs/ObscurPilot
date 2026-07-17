@@ -35,7 +35,7 @@ export const PttProjectionSchema = z
 export type PttProjection = z.infer<typeof PttProjectionSchema>;
 
 export const PttCommandPayloadSchema = z
-  .object({ action: z.enum(['press', 'release', 'cancel']) })
+  .object({ action: z.enum(['tap', 'press', 'release', 'cancel']) })
   .strict();
 export type PttCommandPayload = z.infer<typeof PttCommandPayloadSchema>;
 

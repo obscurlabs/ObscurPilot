@@ -1,11 +1,17 @@
 import { GetBootstrapRequestSchema } from '@obscurpilot/contracts/bootstrap';
 import { createResultEnvelopeSchema, IPC_PROTOCOL_VERSION } from '@obscurpilot/contracts/ipc';
 import { AppSnapshotSchema, StateChangedEventSchema } from '@obscurpilot/contracts/state';
+import { PttCommandPayloadSchema } from '@obscurpilot/contracts/audio';
 import { describe, expect, it } from 'vitest';
 
 const requestId = '10000000-0000-4000-8000-000000000001';
 
 describe('versioned IPC contracts', () => {
+  it('accepts tap-to-talk and rejects unknown audio actions', () => {
+    expect(PttCommandPayloadSchema.parse({ action: 'tap' })).toEqual({ action: 'tap' });
+    expect(() => PttCommandPayloadSchema.parse({ action: 'listen_forever' })).toThrow();
+  });
+
   it('rejects unknown request properties and protocol versions', () => {
     const valid = {
       protocolVersion: IPC_PROTOCOL_VERSION,

@@ -65,7 +65,7 @@ const blankDraft = (obs?: ObsProjection): Draft => {
     preScene: scene,
     liveScene: scene,
     requiredInputs: '',
-    countdown: '300',
+    countdown: '0',
     countdownInput: '',
     recording: 'on',
   };

@@ -132,7 +132,7 @@ export function createRendererApi(ipc: RendererIpc): Readonly<ObscurPilotRendere
         ipc.removeListener(IPC_CHANNELS.stateChanged, wrapped);
       };
     },
-    commandPtt: (action: 'press' | 'release' | 'cancel') =>
+    commandPtt: (action: 'tap' | 'press' | 'release' | 'cancel') =>
       invoke(
         ipc,
         IPC_CHANNELS.pttCommand,
