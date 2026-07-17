@@ -76119,7 +76119,7 @@ var GroqResiliencePolicy = class {
         return { value, attempts: attempt };
       } catch (error51) {
         const fault = translateGroqError(error51, signal);
-        if (fault.retryable)
+        if (fault.retryable && fault.code !== "RATE_LIMITED")
           this.circuit.recordFailure(this.now());
         if (!fault.retryable || attempt >= this.maxAttempts)
           throw fault;
@@ -76691,13 +76691,24 @@ var VoiceOrchestrator = class {
   snapshot() {
     return this.projectionValue;
   }
+  /**
+   * Called as soon as the creator starts another push-to-talk capture. A prior
+   * terminal projection must not make the new capture look unavailable.
+   */
+  prepareForNextCommand() {
+    if (this.disposed) return;
+    this.cancel("SUPERSEDED");
+    if (this.active === void 0 && this.projectionValue.phase !== "idle") {
+      this.publish({ phase: "idle", reasonCode: "READY_FOR_NEXT_COMMAND", elapsedMs: 0 });
+    }
+  }
   async processClip(clip, source = "ptt") {
     if (this.disposed) return;
     if (this.pendingConfirmation !== void 0 && source === "hands_free") {
       await this.processConfirmationClip(clip);
       return;
     }
-    this.cancel("SUPERSEDED");
+    this.prepareForNextCommand();
     const correlationId = this.id();
     const active = {
       correlationId,
@@ -76998,9 +77009,20 @@ var HandsFreeConversation = class {
         "The production plan is ready. Say yes to start the broadcast and five minute countdown, or say no to cancel.",
         "VOICE_CONFIRMATION_REQUIRED"
       );
+      return;
     }
     if (agent.phase === "error") {
       this.publish({ phase: "error", reasonCode: agent.reasonCode, level: 0 });
+      return;
+    }
+    if (agent.phase === "completed" || agent.phase === "idle") {
+      if (this.projectionValue.phase !== "speaking") {
+        this.publish({
+          phase: "standby",
+          reasonCode: agent.phase === "completed" ? "COMMAND_COMPLETE_READY" : "READY_FOR_NEXT_COMMAND",
+          level: 0
+        });
+      }
     }
   }
   speak(text, reasonCode = "SPEAKING") {
@@ -78830,7 +78852,7 @@ async function startApplication() {
       isTrustedSender: trustedSender,
       handler: ({ payload }) => {
         if (payload.action === "press") {
-          voiceOrchestrator?.cancel("SUPERSEDED");
+          voiceOrchestrator?.prepareForNextCommand();
           activeAudioService.press();
         }
         if (payload.action === "release") activeAudioService.release();

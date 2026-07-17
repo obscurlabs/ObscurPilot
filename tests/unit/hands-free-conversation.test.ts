@@ -65,4 +65,20 @@ describe('hands-free conversation boundary', () => {
     });
     expect(projections).toHaveLength(2);
   });
+
+  it('clears a prior error from the overlay when a later command completes', () => {
+    const controller = new HandsFreeConversation(preferences, () => undefined);
+    controller.syncAgent({ phase: 'error', reasonCode: 'RATE_LIMITED', elapsedMs: 100 });
+    expect(controller.snapshot()).toMatchObject({ phase: 'error', reasonCode: 'RATE_LIMITED' });
+
+    controller.syncAgent({
+      phase: 'completed',
+      reasonCode: 'COMMAND_LOOP_COMPLETE',
+      elapsedMs: 250,
+    });
+    expect(controller.snapshot()).toMatchObject({
+      phase: 'standby',
+      reasonCode: 'COMMAND_COMPLETE_READY',
+    });
+  });
 });

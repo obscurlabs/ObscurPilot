@@ -52,7 +52,11 @@ export class GroqResiliencePolicy {
         return { value, attempts: attempt };
       } catch (error: unknown) {
         const fault = translateGroqError(error, signal);
-        if (fault.retryable) this.circuit.recordFailure(this.now());
+        // A provider quota response is expected flow-control, not an upstream
+        // outage. Opening the circuit for it would reject the creator's next
+        // command even after the provider's reset window has elapsed.
+        if (fault.retryable && fault.code !== 'RATE_LIMITED')
+          this.circuit.recordFailure(this.now());
         if (!fault.retryable || attempt >= this.maxAttempts) throw fault;
         const exponentialDelayMs = computeFullJitterDelay(attempt - 1, this.random, {
           baseDelayMs: this.baseDelayMs,

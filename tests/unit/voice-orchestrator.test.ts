@@ -36,6 +36,35 @@ describe('voice orchestration privacy boundary', () => {
     expect(bytes.every((value) => value === 0)).toBe(true);
   });
 
+  it('returns to ready state as soon as the creator begins another command', async () => {
+    const projections: AgentInteractionProjection[] = [];
+    const orchestrator = new VoiceOrchestrator({
+      transcription: new GroqTranscriptionAdapter({
+        transport: { transcribe: async () => ({ text: 'first command' }) },
+        maxAttempts: 1,
+      }),
+      onProjection: (projection) => projections.push(projection),
+      onConnection: () => undefined,
+    });
+
+    await orchestrator.processClip({
+      clipId: crypto.randomUUID(),
+      sessionId: crypto.randomUUID(),
+      durationMs: 250,
+      bytes: new Uint8Array(128),
+      mimeType: 'audio/wav',
+      truncated: false,
+    });
+    expect(orchestrator.snapshot().phase).toBe('completed');
+
+    orchestrator.prepareForNextCommand();
+    expect(orchestrator.snapshot()).toMatchObject({
+      phase: 'idle',
+      reasonCode: 'READY_FOR_NEXT_COMMAND',
+    });
+    expect(projections.at(-1)).toMatchObject({ phase: 'idle' });
+  });
+
   it('expires confirmation after 45 seconds and resumes the paused loop deadline', async () => {
     vi.useFakeTimers();
     const projections: AgentInteractionProjection[] = [];

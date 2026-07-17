@@ -66,6 +66,18 @@ export class VoiceOrchestrator {
     return this.projectionValue;
   }
 
+  /**
+   * Called as soon as the creator starts another push-to-talk capture. A prior
+   * terminal projection must not make the new capture look unavailable.
+   */
+  public prepareForNextCommand(): void {
+    if (this.disposed) return;
+    this.cancel('SUPERSEDED');
+    if (this.active === undefined && this.projectionValue.phase !== 'idle') {
+      this.publish({ phase: 'idle', reasonCode: 'READY_FOR_NEXT_COMMAND', elapsedMs: 0 });
+    }
+  }
+
   public async processClip(
     clip: EncodedAudioClip,
     source: VoiceCaptureSource = 'ptt',
@@ -75,7 +87,7 @@ export class VoiceOrchestrator {
       await this.processConfirmationClip(clip);
       return;
     }
-    this.cancel('SUPERSEDED');
+    this.prepareForNextCommand();
     const correlationId = this.id();
     const active = {
       correlationId,

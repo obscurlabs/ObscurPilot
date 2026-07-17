@@ -144,6 +144,23 @@ describe('Groq transcription boundary', () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
+  it('does not open the outage circuit for expected provider rate limits', async () => {
+    const throttled = adapter(
+      async () => {
+        throw new GroqAdapterError('RATE_LIMITED', 'quota reached', true);
+      },
+      { maxAttempts: 1, now: () => 1_000 },
+    );
+
+    for (let index = 0; index < 6; index += 1) {
+      await expect(
+        throttled.transcribe(clip(), id, new AbortController().signal),
+      ).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    }
+
+    expect(throttled.circuitState()).toBe('closed');
+  });
+
   it('keeps transcript and audio content out of operational diagnostics', async () => {
     const events: unknown[] = [];
     const secretTranscript = 'private spoken command';

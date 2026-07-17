@@ -1490,7 +1490,7 @@ async function startApplication(): Promise<void> {
       isTrustedSender: trustedSender,
       handler: ({ payload }) => {
         if (payload.action === 'press') {
-          voiceOrchestrator?.cancel('SUPERSEDED');
+          voiceOrchestrator?.prepareForNextCommand();
           activeAudioService.press();
         }
         if (payload.action === 'release') activeAudioService.release();

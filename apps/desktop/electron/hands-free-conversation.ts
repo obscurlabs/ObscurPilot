@@ -98,9 +98,24 @@ export class HandsFreeConversation {
         'The production plan is ready. Say yes to start the broadcast and five minute countdown, or say no to cancel.',
         'VOICE_CONFIRMATION_REQUIRED',
       );
+      return;
     }
     if (agent.phase === 'error') {
       this.publish({ phase: 'error', reasonCode: agent.reasonCode, level: 0 });
+      return;
+    }
+    if (agent.phase === 'completed' || agent.phase === 'idle') {
+      // Terminal agent state replaces a prior error immediately. Without this,
+      // the always-visible pilot overlay can keep showing Error after a
+      // newer command succeeds.
+      if (this.projectionValue.phase !== 'speaking') {
+        this.publish({
+          phase: 'standby',
+          reasonCode:
+            agent.phase === 'completed' ? 'COMMAND_COMPLETE_READY' : 'READY_FOR_NEXT_COMMAND',
+          level: 0,
+        });
+      }
     }
   }
 
