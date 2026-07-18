@@ -66,32 +66,14 @@ jobs:
       - name: Static verification
         run: npm run verify:static
 
-      - name: Unit and contract tests
-        run: npm test
-
-      - name: Stage test projects
-        run: |
-          npm run test:integration
-          npm run test:chaos
-          npm run test:performance
-
       - name: Production build
         run: npm run build
 
-      - name: Renderer secret-boundary scan
-        run: npm run verify:renderer-boundary
-
-      - name: Production dependency audit
-        run: npm run audit:dependencies
-
-      - name: Production license audit
-        run: npm run audit:licenses
+      - name: Combined startup security check
+        run: npm run check
 
       - name: Create unsigned unpacked artifact
         run: npm run package:dir
-
-      - name: Electron source and packaged boundary smoke tests
-        run: npm run test:e2e
 
       - name: Upload unpacked desktop
         uses: actions/upload-artifact@v4

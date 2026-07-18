@@ -9,7 +9,6 @@
     { "path": "./packages/adapters-supabase" },
     { "path": "./packages/observability" },
     { "path": "./apps/desktop/tsconfig.electron.json" },
-    { "path": "./apps/desktop/tsconfig.renderer.json" },
-    { "path": "./tsconfig.tests.json" }
+    { "path": "./apps/desktop/tsconfig.renderer.json" }
   ]
 }

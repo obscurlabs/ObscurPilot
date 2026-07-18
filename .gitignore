@@ -4,9 +4,7 @@ dist-electron/
 dist-renderer/
 *.tsbuildinfo
 .types/
-coverage/
-playwright-report/
-test-results/
+.remember/
 artifacts/
 release/
 supabase/.temp/

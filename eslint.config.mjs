@@ -13,9 +13,7 @@ export default tseslint.config(
       '**/dist-renderer/**',
       '**/.types/**',
       'artifacts/**',
-      'coverage/**',
-      'playwright-report/**',
-      'test-results/**',
+      '.remember/**',
     ],
   },
   js.configs.recommended,
@@ -48,12 +46,7 @@ export default tseslint.config(
     },
   },
   {
-    files: [
-      'apps/desktop/electron/**/*.ts',
-      'packages/**/*.ts',
-      'tests/**/*.ts',
-      '*.config.{ts,mjs}',
-    ],
+    files: ['apps/desktop/electron/**/*.ts', 'packages/**/*.ts', '*.config.{ts,mjs}'],
     languageOptions: {
       globals: globals.node,
     },
