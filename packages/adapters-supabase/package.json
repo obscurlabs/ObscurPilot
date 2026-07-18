@@ -23,6 +23,6 @@
   },
   "dependencies": {
     "@obscurpilot/contracts": "0.1.0",
-    "@supabase/supabase-js": "2.110.6"
+    "@supabase/supabase-js": "2.110.7"
   }
 }

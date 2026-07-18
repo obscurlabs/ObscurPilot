@@ -9,5 +9,7 @@ export default defineConfig({
     include: ['tests/unit/**/*.test.ts', 'tests/contract/**/*.test.ts'],
     passWithNoTests: false,
     restoreMocks: true,
+    pool: 'threads',
+    isolate: false,
   },
 });

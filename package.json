@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Cloud-hybrid voice-controlled live production desktop platform",
   "license": "UNLICENSED",
-  "packageManager": "npm@10.2.5",
+  "packageManager": "npm@11.11.0",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"

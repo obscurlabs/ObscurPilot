@@ -1,5 +1,8 @@
 node_modules/
 dist/
+dist-electron/
+dist-renderer/
+*.tsbuildinfo
 .types/
 coverage/
 playwright-report/

@@ -8378,7 +8378,7 @@ var require_version = __commonJS({
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.version = void 0;
-    exports2.version = "2.110.6";
+    exports2.version = "2.110.7";
   }
 });
 
@@ -8814,6 +8814,7 @@ var require_phoenix_cjs = __commonJS({
     var DEFAULT_VSN = "2.0.0";
     var DEFAULT_TIMEOUT = 1e4;
     var WS_CLOSE_NORMAL = 1e3;
+    var MAX_LONGPOLL_BATCH_SIZE = 100;
     var SOCKET_STATES = (
       /** @type {const} */
       { connecting: 0, open: 1, closing: 2, closed: 3 }
@@ -9532,16 +9533,22 @@ var require_phoenix_cjs = __commonJS({
           }, 0);
         }
       }
-      batchSend(messages) {
+      batchSend(messages, offset = 0) {
         this.awaitingBatchAck = true;
-        this.ajax("POST", { "Content-Type": "application/x-ndjson" }, messages.join("\n"), () => this.onerror("timeout"), (resp) => {
-          this.awaitingBatchAck = false;
+        const next = offset + MAX_LONGPOLL_BATCH_SIZE;
+        const batch = messages.slice(offset, next);
+        this.ajax("POST", { "Content-Type": "application/x-ndjson" }, batch.join("\n"), () => this.onerror("timeout"), (resp) => {
           if (!resp || resp.status !== 200) {
+            this.awaitingBatchAck = false;
             this.onerror(resp && resp.status);
             this.closeAndRetry(1011, "internal server error", false);
+          } else if (next < messages.length) {
+            this.batchSend(messages, next);
           } else if (this.batchBuffer.length > 0) {
             this.batchSend(this.batchBuffer);
             this.batchBuffer = [];
+          } else {
+            this.awaitingBatchAck = false;
           }
         });
       }
@@ -9584,7 +9591,7 @@ var require_phoenix_cjs = __commonJS({
       constructor(channel, opts = {}) {
         let events = opts.events || /** @type {PresenceEvents} */
         { state: "presence_state", diff: "presence_diff" };
-        this.state = {};
+        this.state = /* @__PURE__ */ Object.create(null);
         this.pendingDiffs = [];
         this.channel = channel;
         this.joinRef = null;
@@ -9663,9 +9670,10 @@ var require_phoenix_cjs = __commonJS({
        * @returns {Record<string, PresenceState>}
        */
       static syncState(currentState, newState, onJoin, onLeave) {
-        let state = this.clone(currentState);
-        let joins = {};
-        let leaves = {};
+        let state = this.toNullProtoObj(this.clone(currentState));
+        newState = this.toNullProtoObj(newState);
+        let joins = /* @__PURE__ */ Object.create(null);
+        let leaves = /* @__PURE__ */ Object.create(null);
         this.map(state, (key, presence) => {
           if (!newState[key]) {
             leaves[key] = presence;
@@ -9707,6 +9715,7 @@ var require_phoenix_cjs = __commonJS({
        * @returns {Record<string, PresenceState>}
        */
       static syncDiff(state, diff, onJoin, onLeave) {
+        state = this.toNullProtoObj(state);
         let { joins, leaves } = this.clone(diff);
         if (!onJoin) {
           onJoin = function() {
@@ -9770,6 +9779,22 @@ var require_phoenix_cjs = __commonJS({
       static map(obj, func) {
         return Object.getOwnPropertyNames(obj).map((key) => func(key, obj[key]));
       }
+      // Presence keys are chosen on the server and may collide with
+      // Object.prototype properties ("__proto__", "constructor", ...), so any
+      // object indexed by presence key must not have a prototype chain
+      //
+      // TODO: replace the null-prototype objects with Maps in Phoenix 2.0
+      // (breaking change for the lower-level static API)
+      static toNullProtoObj(obj) {
+        if (Object.getPrototypeOf(obj) === null) {
+          return obj;
+        }
+        let cleaned = /* @__PURE__ */ Object.create(null);
+        Object.getOwnPropertyNames(obj).forEach((key) => {
+          cleaned[key] = obj[key];
+        });
+        return cleaned;
+      }
       /**
       * @template T
       * @param {T} obj
@@ -9814,23 +9839,42 @@ var require_phoenix_cjs = __commonJS({
       /** @private */
       binaryEncode(message) {
         let { join_ref, ref, event, topic, payload } = message;
-        let metaLength = this.META_LENGTH + join_ref.length + ref.length + topic.length + event.length;
+        let encoder = new TextEncoder();
+        let joinRefBytes = encoder.encode(join_ref);
+        let refBytes = encoder.encode(ref);
+        let topicBytes = encoder.encode(topic);
+        let eventBytes = encoder.encode(event);
+        this.assertFieldSize(joinRefBytes.byteLength, "join_ref");
+        this.assertFieldSize(refBytes.byteLength, "ref");
+        this.assertFieldSize(topicBytes.byteLength, "topic");
+        this.assertFieldSize(eventBytes.byteLength, "event");
+        let metaLength = this.META_LENGTH + joinRefBytes.byteLength + refBytes.byteLength + topicBytes.byteLength + eventBytes.byteLength;
         let header = new ArrayBuffer(this.HEADER_LENGTH + metaLength);
+        let headerBytes = new Uint8Array(header);
         let view = new DataView(header);
         let offset = 0;
         view.setUint8(offset++, this.KINDS.push);
-        view.setUint8(offset++, join_ref.length);
-        view.setUint8(offset++, ref.length);
-        view.setUint8(offset++, topic.length);
-        view.setUint8(offset++, event.length);
-        Array.from(join_ref, (char) => view.setUint8(offset++, char.charCodeAt(0)));
-        Array.from(ref, (char) => view.setUint8(offset++, char.charCodeAt(0)));
-        Array.from(topic, (char) => view.setUint8(offset++, char.charCodeAt(0)));
-        Array.from(event, (char) => view.setUint8(offset++, char.charCodeAt(0)));
+        view.setUint8(offset++, joinRefBytes.byteLength);
+        view.setUint8(offset++, refBytes.byteLength);
+        view.setUint8(offset++, topicBytes.byteLength);
+        view.setUint8(offset++, eventBytes.byteLength);
+        headerBytes.set(joinRefBytes, offset);
+        offset += joinRefBytes.byteLength;
+        headerBytes.set(refBytes, offset);
+        offset += refBytes.byteLength;
+        headerBytes.set(topicBytes, offset);
+        offset += topicBytes.byteLength;
+        headerBytes.set(eventBytes, offset);
+        offset += eventBytes.byteLength;
         var combined = new Uint8Array(header.byteLength + payload.byteLength);
-        combined.set(new Uint8Array(header), 0);
+        combined.set(headerBytes, 0);
         combined.set(new Uint8Array(payload), header.byteLength);
         return combined.buffer;
+      },
+      assertFieldSize(size, name) {
+        if (size > 255) {
+          throw new Error(`unable to convert ${name} to binary: must be less than or equal to 255 bytes, but is ${size} bytes`);
+        }
       },
       /**
       * @private
@@ -10009,7 +10053,7 @@ var require_phoenix_cjs = __commonJS({
             this.connect();
           });
         }, this.reconnectAfterMs);
-        this.authToken = opts.authToken;
+        this.authToken = opts.authToken && closure(opts.authToken);
       }
       /**
        * Returns the LongPoll transport reference
@@ -10210,7 +10254,7 @@ var require_phoenix_cjs = __commonJS({
         this.closeWasClean = false;
         let protocols = void 0;
         if (this.authToken) {
-          protocols = ["phoenix", `${AUTH_TOKEN_PREFIX}${btoa(this.authToken).replace(/=/g, "")}`];
+          protocols = ["phoenix", `${AUTH_TOKEN_PREFIX}${btoa(this.authToken()).replace(/=/g, "")}`];
         }
         this.conn = new this.transport(this.endPointURL(), protocols);
         this.conn.binaryType = this.binaryType;
@@ -12518,7 +12562,7 @@ var require_version2 = __commonJS({
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.version = void 0;
-    exports2.version = "2.110.6";
+    exports2.version = "2.110.7";
   }
 });
 
@@ -35726,13 +35770,13 @@ function authorizeTool(grants, request) {
   }
 }
 
-// ../../node_modules/obs-websocket-js/dist/chunk-7YS3BKSP.js
+// ../../node_modules/obs-websocket-js/dist/chunk-MVPOL3ZW.js
 var import_debug = __toESM(require_src(), 1);
 
 // ../../node_modules/eventemitter3/index.mjs
 var import_index = __toESM(require_eventemitter3(), 1);
 
-// ../../node_modules/obs-websocket-js/dist/chunk-7YS3BKSP.js
+// ../../node_modules/obs-websocket-js/dist/chunk-MVPOL3ZW.js
 var import_isomorphic_ws = __toESM(require_node2(), 1);
 var import_sha256 = __toESM(require_sha256(), 1);
 var import_enc_base64 = __toESM(require_enc_base64(), 1);
@@ -35749,7 +35793,8 @@ var EventSubscription = /* @__PURE__ */ ((EventSubscription2) => {
   EventSubscription2[EventSubscription2["MediaInputs"] = 256] = "MediaInputs";
   EventSubscription2[EventSubscription2["Vendors"] = 512] = "Vendors";
   EventSubscription2[EventSubscription2["Ui"] = 1024] = "Ui";
-  EventSubscription2[EventSubscription2["All"] = 2047] = "All";
+  EventSubscription2[EventSubscription2["Canvases"] = 2048] = "Canvases";
+  EventSubscription2[EventSubscription2["All"] = 4095] = "All";
   EventSubscription2[EventSubscription2["InputVolumeMeters"] = 65536] = "InputVolumeMeters";
   EventSubscription2[EventSubscription2["InputActiveStateChanged"] = 131072] = "InputActiveStateChanged";
   EventSubscription2[EventSubscription2["InputShowStateChanged"] = 262144] = "InputShowStateChanged";
@@ -43556,7 +43601,7 @@ var StorageFileApi = class extends BaseApiClient {
     return query;
   }
 };
-var version2 = "2.110.6";
+var version2 = "2.110.7";
 var DEFAULT_HEADERS = { "X-Client-Info": `storage-js/${version2}` };
 var StorageBucketApi = class extends BaseApiClient {
   constructor(url2, headers = {}, fetch$1, opts) {
@@ -44961,7 +45006,7 @@ var StorageClient = class extends StorageBucketApi {
 var import_auth_js = __toESM(require_main4(), 1);
 __reExport(dist_exports, __toESM(require_main3(), 1));
 __reExport(dist_exports, __toESM(require_main4(), 1));
-var version3 = "2.110.6";
+var version3 = "2.110.7";
 var JS_ENV = "";
 var JS_RUNTIME_VERSION;
 if (typeof Deno !== "undefined") {
@@ -45688,7 +45733,7 @@ var SupabaseClient = class {
     });
   }
   _handleTokenChanged(event, source, token) {
-    if ((event === "TOKEN_REFRESHED" || event === "SIGNED_IN") && this.changedAccessToken !== token) {
+    if ((event === "TOKEN_REFRESHED" || event === "SIGNED_IN" || event === "INITIAL_SESSION") && this.changedAccessToken !== token) {
       this.changedAccessToken = token;
       this.realtime.setAuth(token);
     } else if (event === "SIGNED_OUT") {
