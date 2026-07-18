@@ -4,7 +4,7 @@ Status: **complete**
 
 - [Acceptance record](acceptance-record.md)
 - [Historical 15% progress record](progress-record.md)
-- [Control-board design contract](../../design-system/obscurpilot/pages/control-board.md)
+- [Control-board design contract](../design-system/obscurpilot/pages/control-board.md)
 
 ## Delivered architecture
 

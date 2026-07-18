@@ -36117,7 +36117,7 @@ var OBSWebSocket = class extends BaseOBSWebSocket {
 };
 var msgpack_default = OBSWebSocket;
 
-// ../../packages/adapters-obs/dist/boundary.js
+// ../../packages/adapters/dist/obs/boundary.js
 var SNAPSHOT_INVALIDATING_EVENTS = [
   "CurrentSceneCollectionChanging",
   "CurrentSceneCollectionChanged",
@@ -36600,7 +36600,7 @@ var GetSnapshotRequestSchema = createRequestEnvelopeSchema(GetSnapshotPayloadSch
 var import_electron6 = require("electron");
 var import_node_path10 = require("node:path");
 
-// electron/audio-service.ts
+// electron/services/audio-service.ts
 var import_node_crypto = require("node:crypto");
 
 // ../../packages/domain/dist/audio-pipeline.js
@@ -36833,7 +36833,7 @@ function writeAscii(output, offset, value) {
     output[offset + index] = value.charCodeAt(index);
 }
 
-// electron/audio-service.ts
+// electron/services/audio-service.ts
 var import_electron = require("electron");
 var INTERNAL_EVENT = "audio-internal:event:v1";
 var INTERNAL_COMMAND = "audio-internal:command:v1";
@@ -37082,7 +37082,7 @@ var PttAudioService = class {
   }
 };
 
-// electron/application-protocol.ts
+// electron/core/application-protocol.ts
 var import_node_fs = require("node:fs");
 var import_node_path = require("node:path");
 var import_node_url = require("node:url");
@@ -37124,7 +37124,7 @@ function registerApplicationProtocol(registrar = import_electron2.protocol) {
   });
 }
 
-// electron/environment.ts
+// electron/core/environment.ts
 var import_node_fs2 = require("node:fs");
 var import_node_path2 = require("node:path");
 var import_dotenv = __toESM(require_main(), 1);
@@ -37199,7 +37199,7 @@ function getDevelopmentServerUrl(environment) {
   return url2;
 }
 
-// electron/ipc-router.ts
+// electron/core/ipc-router.ts
 var import_node_crypto2 = require("node:crypto");
 var PublicFault = class extends Error {
   constructor(code, message, retryable = false) {
@@ -37287,7 +37287,7 @@ function serializedSize(value) {
   }
 }
 
-// electron/lifecycle.ts
+// electron/core/lifecycle.ts
 var LifecycleScope = class {
   disposers = [];
   disposed = false;
@@ -37317,7 +37317,7 @@ var LifecycleScope = class {
   }
 };
 
-// electron/security.ts
+// electron/core/security.ts
 var PRODUCTION_POLICY = [
   "default-src 'self'",
   "script-src 'self'",
@@ -37421,7 +37421,7 @@ var SnapshotStore = class {
   }
 };
 
-// electron/state-service.ts
+// electron/services/state-service.ts
 var PROVIDERS = ["obs", "twitch", "groq", "supabase"];
 var INITIAL_CORRELATION_ID = "00000000-0000-4000-8000-000000000000";
 function initialConnection(provider) {
@@ -37472,7 +37472,7 @@ var MainStateService = class {
   }
 };
 
-// electron/secure-settings.ts
+// electron/storage/secure-settings.ts
 var import_promises = require("node:fs/promises");
 var import_node_path3 = require("node:path");
 var import_promises2 = require("node:fs/promises");
@@ -37624,7 +37624,7 @@ var LiveSessionChangedEventSchema = createEventEnvelopeSchema(LiveSessionProject
 var ChatMessageEventSchema = createEventEnvelopeSchema(ChatMessageProjectionSchema);
 var ChatAnalysisEventSchema = createEventEnvelopeSchema(ChatAnalysisProjectionSchema);
 
-// electron/secure-settings.ts
+// electron/storage/secure-settings.ts
 var SettingsSchema = external_exports.object({
   accelerator: external_exports.string().min(1).max(64).default("CommandOrControl+Shift+Space"),
   audioDeviceId: external_exports.string().min(1).max(512).default("default"),
@@ -37675,7 +37675,7 @@ var SecureSettingsStore = class {
   }
 };
 
-// electron/window-manager.ts
+// electron/core/window-manager.ts
 var import_node_path4 = require("node:path");
 var import_electron4 = require("electron");
 function createMainWindowShell(isDevelopment) {
@@ -37878,7 +37878,7 @@ var OperationReceiptSchema = external_exports.object({
   status: external_exports.enum(["delivered", "queued"])
 }).strict();
 
-// electron/cloud-bridge.ts
+// electron/services/cloud-bridge.ts
 var import_node_crypto4 = require("node:crypto");
 var import_node_path7 = require("node:path");
 
@@ -45758,7 +45758,7 @@ function shouldShowDeprecationWarning() {
 }
 if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 20 and below are deprecated and will no longer be supported in future versions of @supabase/supabase-js. Please upgrade to Node.js 22 or later. For more information, visit: https://github.com/orgs/supabase/discussions/45715");
 
-// ../../packages/adapters-supabase/dist/client.js
+// ../../packages/adapters/dist/supabase/client.js
 function createStagePilotSupabaseClient(config2) {
   assertAllowedEndpoint(config2.url);
   assertPublishableKey(config2.publishableKey);
@@ -45827,7 +45827,7 @@ function assertPublishableKey(value) {
   }
 }
 
-// ../../packages/adapters-supabase/dist/repository.js
+// ../../packages/adapters/dist/supabase/repository.js
 var CloudRepositoryError = class extends Error {
   code;
   retryable;
@@ -45986,7 +45986,7 @@ function readScopes(value) {
   return scopes.filter((scope) => typeof scope === "string" && scope.length > 0 && scope.length <= 96);
 }
 
-// ../../packages/adapters-supabase/dist/sync.js
+// ../../packages/adapters/dist/supabase/sync.js
 var INVALIDATION_TABLES = ["profiles", "devices", "control_profiles", "tool_grants"];
 var RealtimeSyncCoordinator = class {
   client;
@@ -46104,7 +46104,7 @@ var RealtimeSyncCoordinator = class {
   }
 };
 
-// electron/encrypted-json-store.ts
+// electron/storage/encrypted-json-store.ts
 var import_node_crypto3 = require("node:crypto");
 var import_promises3 = require("node:fs/promises");
 var import_node_path5 = require("node:path");
@@ -46180,10 +46180,10 @@ function isMissingFile(error51) {
   return typeof error51 === "object" && error51 !== null && "code" in error51 && error51.code === "ENOENT";
 }
 
-// electron/cloud-bridge.ts
+// electron/services/cloud-bridge.ts
 var import_electron5 = require("electron");
 
-// electron/cloud-outbox.ts
+// electron/services/cloud-outbox.ts
 var import_node_path6 = require("node:path");
 
 // ../../packages/domain/dist/durable-outbox.js
@@ -46376,7 +46376,7 @@ function utf8ByteLength(value) {
   return bytes;
 }
 
-// electron/cloud-outbox.ts
+// electron/services/cloud-outbox.ts
 var StoredOutboxEventSchema = external_exports.object({
   id: external_exports.string().min(1).max(128),
   idempotencyKey: external_exports.string().uuid(),
@@ -46444,7 +46444,7 @@ function createCloudOutbox(userDataPath, repository, getCurrentUserId, encryptio
   );
 }
 
-// electron/cloud-bridge.ts
+// electron/services/cloud-bridge.ts
 var AuthValuesSchema = external_exports.record(external_exports.string().min(1).max(256), external_exports.string().max(2 * 1024 * 1024));
 var CLOUD_AUTH_CALLBACK = "obscurpilot://auth/callback";
 var DeviceIdentitySchema = external_exports.object({
@@ -46947,11 +46947,11 @@ var TwitchEmptyPayloadSchema = external_exports.object({}).strict();
 var TwitchOperationAcceptedSchema = external_exports.object({ accepted: external_exports.literal(true) }).strict();
 var TwitchActivityEventSchema = createEventEnvelopeSchema(TwitchActivitySchema);
 
-// electron/twitch-bridge.ts
+// electron/services/twitch-bridge.ts
 var import_node_crypto6 = require("node:crypto");
 var import_node_path8 = require("node:path");
 
-// ../../packages/adapters-twitch/dist/boundary.js
+// ../../packages/adapters/dist/twitch/boundary.js
 var import_node_crypto5 = require("node:crypto");
 
 // ../../node_modules/@twurple/api/lib/client/ApiClient.js
@@ -73363,7 +73363,7 @@ EventSubWsListener = __decorate([
   rtfm("eventsub-ws", "EventSubWsListener")
 ], EventSubWsListener);
 
-// ../../packages/adapters-twitch/dist/boundary.js
+// ../../packages/adapters/dist/twitch/boundary.js
 var TwitchAuthenticationError = class extends Error {
   constructor(message = "Twitch authorization is required") {
     super(message);
@@ -73767,7 +73767,7 @@ function classifyReason(error51) {
   return "UPSTREAM_UNAVAILABLE";
 }
 
-// electron/twitch-bridge.ts
+// electron/services/twitch-bridge.ts
 var OAUTH_FUNCTION = "twitch-oauth";
 var TwitchAccountResponseSchema = external_exports.object({
   connected: external_exports.boolean(),
@@ -75949,7 +75949,7 @@ Groq.Models = Models;
 Groq.Batches = Batches;
 Groq.Files = Files;
 
-// ../../packages/adapters-groq/dist/client.js
+// ../../packages/adapters/dist/groq/client.js
 function createGroqClient(options) {
   if (options.apiKey.trim() === "")
     throw new Error("Groq API key is required");
@@ -75962,7 +75962,7 @@ function createGroqClient(options) {
   });
 }
 
-// ../../packages/adapters-groq/dist/errors.js
+// ../../packages/adapters/dist/groq/errors.js
 var GroqAdapterError = class extends Error {
   code;
   retryable;
@@ -76104,7 +76104,7 @@ function sleepWithSignal(delayMs, signal, clock = systemClock) {
   });
 }
 
-// ../../packages/adapters-groq/dist/resilience.js
+// ../../packages/adapters/dist/groq/resilience.js
 var GroqResiliencePolicy = class {
   maxAttempts;
   baseDelayMs;
@@ -76152,7 +76152,7 @@ var GroqResiliencePolicy = class {
   }
 };
 
-// ../../packages/adapters-groq/dist/transcription.js
+// ../../packages/adapters/dist/groq/transcription.js
 var MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 var MAX_TRANSCRIPT_CHARACTERS = 16e3;
 var TranscriptionResponseSchema = external_exports.object({ text: external_exports.string() }).passthrough();
@@ -76264,7 +76264,7 @@ function createDeadlineSignal(parent, timeoutMs) {
   };
 }
 
-// ../../packages/adapters-groq/dist/reasoning.js
+// ../../packages/adapters/dist/groq/reasoning.js
 var ModelToolCallSchema = external_exports.object({
   id: external_exports.string().min(1).max(128),
   type: external_exports.literal("function"),
@@ -76508,7 +76508,7 @@ var BoundedLoopController = class {
   }
 };
 
-// ../../packages/adapters-groq/dist/tool-orchestrator.js
+// ../../packages/adapters/dist/groq/tool-orchestrator.js
 var REASONING_PROMPT_VERSION = "obscurpilot.control.v1";
 var TOOL_POLICY_VERSION = "obscurpilot.tool-policy.v1";
 var SYSTEM_PROMPT = `You are ObscurPilot's deterministic live-production planner.
@@ -76679,7 +76679,7 @@ function serializeToolResult(value) {
   return serialized;
 }
 
-// electron/voice-orchestrator.ts
+// electron/services/voice-orchestrator.ts
 var import_node_crypto7 = require("node:crypto");
 var VoiceOrchestrator = class {
   constructor(options) {
@@ -76933,7 +76933,7 @@ function reasonCodeForError(error51) {
   return "ORCHESTRATION_FAILED";
 }
 
-// electron/hands-free-conversation.ts
+// electron/services/hands-free-conversation.ts
 var import_node_crypto8 = require("node:crypto");
 var HandsFreeConversation = class {
   constructor(preferences, onProjection, now = Date.now) {
@@ -77605,7 +77605,7 @@ function analyze(message, burst, now) {
   });
 }
 
-// electron/obs-process-supervisor.ts
+// electron/services/obs-process-supervisor.ts
 var import_node_child_process = require("node:child_process");
 var import_node_fs3 = require("node:fs");
 var import_node_path9 = require("node:path");

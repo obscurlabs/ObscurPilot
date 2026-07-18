@@ -12,7 +12,7 @@ import { AudioClipVault, PttAudioPipeline } from '@obscurpilot/domain/audio-pipe
 import type { EncodedAudioClip } from '@obscurpilot/domain/audio-pipeline';
 import { globalShortcut, type BrowserWindow, type IpcMain, type IpcMainEvent } from 'electron';
 import { z } from 'zod';
-import type { SecureSettingsStore } from './secure-settings.js';
+import type { SecureSettingsStore } from '../storage/secure-settings.js';
 
 const INTERNAL_EVENT = 'audio-internal:event:v1';
 const INTERNAL_COMMAND = 'audio-internal:command:v1';

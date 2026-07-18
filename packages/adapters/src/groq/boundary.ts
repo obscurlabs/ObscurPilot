@@ -1,4 +1,4 @@
-export const GROQ_ADAPTER_PACKAGE = '@obscurpilot/adapters-groq' as const;
+export const GROQ_ADAPTER_PACKAGE = '@obscurpilot/adapters/groq' as const;
 
 export { createGroqClient, type GroqClientOptions } from './client.js';
 export { GroqAdapterError, translateGroqError, type GroqFaultCode } from './errors.js';

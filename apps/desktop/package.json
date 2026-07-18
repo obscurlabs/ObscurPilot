@@ -16,13 +16,9 @@
     "package:dir": "electron-builder --dir"
   },
   "dependencies": {
-    "@obscurpilot/adapters-groq": "0.1.0",
-    "@obscurpilot/adapters-obs": "0.1.0",
-    "@obscurpilot/adapters-supabase": "0.1.0",
-    "@obscurpilot/adapters-twitch": "0.1.0",
+    "@obscurpilot/adapters": "0.1.0",
     "@obscurpilot/contracts": "0.1.0",
     "@obscurpilot/domain": "0.1.0",
-    "@obscurpilot/observability": "0.1.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "dotenv": "17.4.2",

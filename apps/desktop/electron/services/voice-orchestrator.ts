@@ -7,11 +7,11 @@ import {
   type ConfirmationRequest,
   type GroqTranscriptionAdapter,
   type TranscriptionResult,
-} from '@obscurpilot/adapters-groq/boundary';
+} from '@obscurpilot/adapters/groq';
 import type { AgentConfirmationDecisionPayload } from '@obscurpilot/contracts/agent';
 import { LoopLimitError } from '@obscurpilot/domain/loop-controller';
 import { PolicyDeniedError } from '@obscurpilot/domain/policy';
-import { ObsBridgeError } from '@obscurpilot/adapters-obs/boundary';
+import { ObsBridgeError } from '@obscurpilot/adapters/obs';
 import { ZodError } from 'zod';
 import type { VoiceCaptureSource } from '@obscurpilot/contracts/audio';
 

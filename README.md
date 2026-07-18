@@ -42,6 +42,27 @@ ObscurPilot is a cloud-hybrid, ultra-low-latency, voice-controlled live-producti
 
 The next gate is Stage 11 complete OBS/Twitch live-session orchestration, chat intelligence, and creator-approved moderation. Stage 11 is the first complete local rehearsal gate for a request such as “prepare my Sekiro stream and go live.” A controlled public Twitch live test follows Stage 13 hardening; Stage 15 is the production acceptance baseline.
 
+## Repository structure
+
+```
+apps/desktop          Electron desktop app
+  electron/           Main process — core/ (lifecycle, security, IPC), services/ (audio,
+                      voice, OBS, Twitch, cloud), storage/ (encrypted stores); entries
+                      main.ts and the preload scripts stay at the top level
+  src/                Renderer — components/ui/ holds the reusable component library
+packages/contracts    Shared schemas and types — the system's single source of language
+packages/domain       Pure domain logic: state machines, safety policy, orchestration
+packages/adapters     All platform integrations behind one package: /groq, /obs,
+                      /supabase, /twitch subpath exports
+docs/                 Documentation, ADRs, stage records, and the design system
+scripts/              Startup security check and verification scripts
+supabase/             Database migrations and edge functions
+```
+
+Run `npm run check` once when you start working — it bundles the dependency
+vulnerability audit, license audit, renderer secret-boundary scan, and tracked-secret
+check into a single command.
+
 ## Fixed technology baseline
 
 - Electron + React + TypeScript + Vite

@@ -28,6 +28,10 @@
       "types": "./dist/ipc.d.ts",
       "import": "./dist/ipc.js"
     },
+    "./observability": {
+      "types": "./dist/observability.d.ts",
+      "import": "./dist/observability.js"
+    },
     "./live-session": {
       "types": "./dist/live-session.d.ts",
       "import": "./dist/live-session.js"

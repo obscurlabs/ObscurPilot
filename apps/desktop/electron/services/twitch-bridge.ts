@@ -17,8 +17,8 @@ import {
   TwitchRuntime,
   type DelegatedAccessToken,
   type TwitchTokenBroker,
-} from '@obscurpilot/adapters-twitch/boundary';
-import { EncryptedJsonStore, type EncryptionProvider } from './encrypted-json-store.js';
+} from '@obscurpilot/adapters/twitch';
+import { EncryptedJsonStore, type EncryptionProvider } from '../storage/encrypted-json-store.js';
 import type { CloudBridge } from './cloud-bridge.js';
 
 const OAUTH_FUNCTION = 'twitch-oauth';

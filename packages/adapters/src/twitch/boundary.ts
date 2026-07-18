@@ -10,7 +10,7 @@ import type { ConnectionProjection } from '@obscurpilot/contracts/state';
 import { TwitchActivitySchema, type TwitchActivity } from '@obscurpilot/contracts/twitch';
 import type { ChatMessageProjection, TwitchMetadata } from '@obscurpilot/contracts/live-session';
 
-export const TWITCH_ADAPTER_PACKAGE = '@obscurpilot/adapters-twitch' as const;
+export const TWITCH_ADAPTER_PACKAGE = '@obscurpilot/adapters/twitch' as const;
 
 export interface DelegatedAccessToken {
   readonly accessToken: string;

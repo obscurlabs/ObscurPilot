@@ -1,6 +1,6 @@
 import type { GroqSttModel } from '@obscurpilot/contracts/agent';
 import type { EncodedAudioClip } from '@obscurpilot/domain/audio-pipeline';
-import type { OperationalEvent } from '@obscurpilot/observability/event';
+import type { OperationalEvent } from '@obscurpilot/contracts/observability';
 import type Groq from 'groq-sdk';
 import { z } from 'zod';
 import { GroqAdapterError, translateGroqError } from './errors.js';

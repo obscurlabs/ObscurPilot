@@ -2,14 +2,14 @@ import { resolve } from 'node:path';
 import {
   CloudRepositoryError,
   type CloudRepository,
-} from '@obscurpilot/adapters-supabase/boundary';
+} from '@obscurpilot/adapters/supabase';
 import {
   BoundedDurableOutbox,
   type OutboxPersistence,
   type StoredOutboxEvent,
 } from '@obscurpilot/domain/durable-outbox';
 import { z } from 'zod';
-import { EncryptedJsonStore, type EncryptionProvider } from './encrypted-json-store.js';
+import { EncryptedJsonStore, type EncryptionProvider } from '../storage/encrypted-json-store.js';
 
 const StoredOutboxEventSchema = z
   .object({

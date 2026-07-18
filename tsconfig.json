@@ -3,11 +3,7 @@
   "references": [
     { "path": "./packages/contracts" },
     { "path": "./packages/domain" },
-    { "path": "./packages/adapters-obs" },
-    { "path": "./packages/adapters-twitch" },
-    { "path": "./packages/adapters-groq" },
-    { "path": "./packages/adapters-supabase" },
-    { "path": "./packages/observability" },
+    { "path": "./packages/adapters" },
     { "path": "./apps/desktop/tsconfig.electron.json" },
     { "path": "./apps/desktop/tsconfig.renderer.json" }
   ]

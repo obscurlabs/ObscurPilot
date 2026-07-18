@@ -14,18 +14,18 @@ import {
   createStagePilotSupabaseClient,
   type AsyncAuthStorage,
   type StagePilotSupabaseClient,
-} from '@obscurpilot/adapters-supabase/boundary';
+} from '@obscurpilot/adapters/supabase';
 import { z } from 'zod';
 import type { ZodType } from 'zod';
 import {
   EncryptedJsonStore,
   requireSecureEncryptionProvider,
   type EncryptionProvider,
-} from './encrypted-json-store.js';
+} from '../storage/encrypted-json-store.js';
 import { safeStorage } from 'electron';
 import { createCloudOutbox } from './cloud-outbox.js';
 import type { BoundedDurableOutbox } from '@obscurpilot/domain/durable-outbox';
-import type { Json } from '@obscurpilot/adapters-supabase/boundary';
+import type { Json } from '@obscurpilot/adapters/supabase';
 import type { ToolGrant } from '@obscurpilot/domain/policy';
 
 const AuthValuesSchema = z.record(z.string().min(1).max(256), z.string().max(2 * 1024 * 1024));

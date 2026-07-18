@@ -4,7 +4,7 @@ import {
   createSdkTranscriptionTransport,
   GroqReasoningAdapter,
   GroqTranscriptionAdapter,
-} from '@obscurpilot/adapters-groq/boundary';
+} from '@obscurpilot/adapters/groq';
 import { config as loadEnvironment } from 'dotenv';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';

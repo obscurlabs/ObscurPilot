@@ -1,5 +1,5 @@
 import type { GroqReasoningModel } from '@obscurpilot/contracts/agent';
-import type { OperationalEvent } from '@obscurpilot/observability/event';
+import type { OperationalEvent } from '@obscurpilot/contracts/observability';
 import type Groq from 'groq-sdk';
 import type {
   ChatCompletionCreateParamsNonStreaming,

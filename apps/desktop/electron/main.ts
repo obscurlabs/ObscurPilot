@@ -26,7 +26,7 @@ import {
   createObsProductionTools,
   ObsBridge,
   type ObsCommandRequest,
-} from '@obscurpilot/adapters-obs/boundary';
+} from '@obscurpilot/adapters/obs';
 import {
   AppSnapshotSchema,
   GetSnapshotPayloadSchema,
@@ -43,22 +43,22 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron';
 import { resolve } from 'node:path';
-import { PttAudioService } from './audio-service.js';
-import { registerApplicationProtocol } from './application-protocol.js';
+import { PttAudioService } from './services/audio-service.js';
+import { registerApplicationProtocol } from './core/application-protocol.js';
 import {
   getDevelopmentServerUrl,
   loadDevelopmentEnvironment,
   parseEnvironment,
-} from './environment.js';
-import { PublicFault, registerSecureHandler } from './ipc-router.js';
-import { LifecycleScope } from './lifecycle.js';
+} from './core/environment.js';
+import { PublicFault, registerSecureHandler } from './core/ipc-router.js';
+import { LifecycleScope } from './core/lifecycle.js';
 import {
   installPermissionDenial,
   installSecurityHeaders,
   isTrustedRendererUrl,
-} from './security.js';
-import { MainStateService } from './state-service.js';
-import { SecureSettingsStore } from './secure-settings.js';
+} from './core/security.js';
+import { MainStateService } from './services/state-service.js';
+import { SecureSettingsStore } from './storage/secure-settings.js';
 import {
   createAudioCaptureWindow,
   createMainWindow,
@@ -66,7 +66,7 @@ import {
   createPilotOverlayWindow,
   applyPilotOverlayPreferences,
   loadMainWindow,
-} from './window-manager.js';
+} from './core/window-manager.js';
 import {
   CloudAuthProjectionSchema,
   CloudConfirmationPayloadSchema,
@@ -74,7 +74,7 @@ import {
   CloudGetAuthPayloadSchema,
   CloudSignOutPayloadSchema,
 } from '@obscurpilot/contracts/cloud';
-import { CloudBridge } from './cloud-bridge.js';
+import { CloudBridge } from './services/cloud-bridge.js';
 import {
   TwitchActivityEventSchema,
   TwitchCategorySearchPayloadSchema,
@@ -83,8 +83,8 @@ import {
   TwitchOperationAcceptedSchema,
   TwitchProjectionSchema,
 } from '@obscurpilot/contracts/twitch';
-import { TwitchBridge } from './twitch-bridge.js';
-import { requireSecureEncryptionProvider } from './encrypted-json-store.js';
+import { TwitchBridge } from './services/twitch-bridge.js';
+import { requireSecureEncryptionProvider } from './storage/encrypted-json-store.js';
 import {
   AgentConfirmationDecisionPayloadSchema,
   AgentEmptyPayloadSchema,
@@ -98,9 +98,9 @@ import {
   GroqReasoningAdapter,
   GroqTranscriptionAdapter,
   GuardedReasoningOrchestrator,
-} from '@obscurpilot/adapters-groq/boundary';
-import { VoiceOrchestrator } from './voice-orchestrator.js';
-import { HandsFreeConversation } from './hands-free-conversation.js';
+} from '@obscurpilot/adapters/groq';
+import { VoiceOrchestrator } from './services/voice-orchestrator.js';
+import { HandsFreeConversation } from './services/hands-free-conversation.js';
 import { ToolRegistry } from '@obscurpilot/domain/tool-registry';
 import { authorizeTool } from '@obscurpilot/domain/policy';
 import {
@@ -125,7 +125,7 @@ import {
   type LiveSessionTwitchPort,
 } from '@obscurpilot/domain/live-session-coordinator';
 import { BoundedChatIntelligence, ModerationGuard } from '@obscurpilot/domain/chat-intelligence';
-import { ObsProcessSupervisor } from './obs-process-supervisor.js';
+import { ObsProcessSupervisor } from './services/obs-process-supervisor.js';
 
 const lifecycle = new LifecycleScope();
 const stateService = new MainStateService();

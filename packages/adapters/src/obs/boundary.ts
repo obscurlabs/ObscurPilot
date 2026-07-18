@@ -5,7 +5,7 @@ import { authorizeTool, type ToolGrant, type ToolRisk } from '@obscurpilot/domai
 import OBSWebSocket, { EventSubscription, OBSWebSocketError } from 'obs-websocket-js';
 import { z } from 'zod';
 
-export const OBS_ADAPTER_PACKAGE = '@obscurpilot/adapters-obs' as const;
+export const OBS_ADAPTER_PACKAGE = '@obscurpilot/adapters/obs' as const;
 
 const SNAPSHOT_INVALIDATING_EVENTS = [
   'CurrentSceneCollectionChanging',
