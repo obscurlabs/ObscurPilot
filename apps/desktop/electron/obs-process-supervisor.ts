@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
+import { dirname, extname, isAbsolute, join } from 'node:path';
 import type { ObsSnapshot } from '@obscurpilot/contracts/obs';
 
 export interface ObsProcessSupervisorOptions {
@@ -10,6 +10,28 @@ export interface ObsProcessSupervisorOptions {
   readonly now?: () => number;
   readonly sleep?: (milliseconds: number) => Promise<void>;
   readonly spawnProcess?: typeof spawn;
+}
+
+export function resolveObsExecutable(
+  configuredPath = '',
+  environment: NodeJS.ProcessEnv = process.env,
+  exists: (path: string) => boolean = existsSync,
+): string | undefined {
+  const configured = configuredPath.trim();
+  const candidates = [
+    ...(configured !== '' && extname(configured).toLowerCase() === '.exe' ? [configured] : []),
+    environment.ProgramFiles === undefined
+      ? undefined
+      : join(environment.ProgramFiles, 'obs-studio', 'bin', '64bit', 'obs64.exe'),
+    environment['ProgramFiles(x86)'] === undefined
+      ? undefined
+      : join(environment['ProgramFiles(x86)'], 'obs-studio', 'bin', '64bit', 'obs64.exe'),
+    ...(configured !== '' ? [configured] : []),
+  ].filter((candidate): candidate is string => candidate !== undefined);
+  return candidates.find(
+    (candidate) =>
+      isAbsolute(candidate) && extname(candidate).toLowerCase() === '.exe' && exists(candidate),
+  );
 }
 
 export class ObsProcessSupervisor {
@@ -41,12 +63,13 @@ export class ObsProcessSupervisor {
   private async launchAndWait(timeoutMs: number): Promise<ObsSnapshot> {
     const existing = await this.waitForSnapshot(Math.min(3_000, timeoutMs));
     if (existing !== undefined) return existing;
-    const executable = this.options.executablePath;
+    const executable = resolveObsExecutable(this.options.executablePath);
     if (executable === undefined) throw new Error('OBS_EXECUTABLE_NOT_CONFIGURED');
     if (!isAbsolute(executable) || !existsSync(executable))
       throw new Error('OBS_EXECUTABLE_INVALID');
     if (this.child === undefined || this.child.exitCode !== null) {
       const child = this.spawnProcess(executable, [], {
+        cwd: dirname(executable),
         shell: false,
         windowsHide: false,
         stdio: 'ignore',

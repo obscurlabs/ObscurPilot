@@ -119,6 +119,10 @@ body,
 }
 
 .pilot-presence[data-phase='capturing'] .pilot-core,
+.pilot-presence[data-phase='connecting'] .pilot-core,
+.pilot-presence[data-phase='recovering'] .pilot-core,
+.pilot-presence[data-phase='listening'] .pilot-core,
+.pilot-presence[data-phase='speaking'] .pilot-core,
 .pilot-presence[data-phase='reasoning'] .pilot-core,
 .pilot-presence[data-phase='tool_active'] .pilot-core,
 .pilot-presence[data-phase='verifying_live'] .pilot-core {

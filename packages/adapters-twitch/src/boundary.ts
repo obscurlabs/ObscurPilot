@@ -458,6 +458,20 @@ export class TwitchRuntime {
     );
   }
 
+  public async readMetadata(): Promise<TwitchMetadata> {
+    const channel = await this.scheduler.schedule(() =>
+      this.apiClient.channels.getChannelInfoById(this.options.userId),
+    );
+    if (channel === null) throw new TwitchAuthenticationError('Twitch channel was not found');
+    return {
+      title: channel.title.slice(0, 140),
+      categoryId: channel.gameId,
+      categoryName: channel.gameName.slice(0, 120),
+      tags: channel.tags.slice(0, 10),
+      language: channel.language,
+    };
+  }
+
   public async isLive(): Promise<boolean> {
     return (
       (await this.scheduler.schedule(() =>

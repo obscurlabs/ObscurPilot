@@ -10,13 +10,26 @@ type AudioCommand =
       readonly silenceReleaseMs: number;
     }
   | { readonly kind: 'monitor-stop' }
-  | { readonly kind: 'suppress'; readonly suppressed: boolean };
+  | { readonly kind: 'suppress'; readonly suppressed: boolean }
+  | {
+      readonly kind: 'agent-audio';
+      readonly bytes: Uint8Array;
+      readonly sampleRate: number;
+    }
+  | { readonly kind: 'agent-audio-stop' }
+  | { readonly kind: 'agent-audio-done' };
 
 export {};
 
 let stream: MediaStream | undefined;
 let context: AudioContext | undefined;
 let worklet: AudioWorkletNode | undefined;
+let playbackContext: AudioContext | undefined;
+let playbackNextAt = 0;
+let playbackGeneration = 0;
+let playbackStreamOpen = false;
+let playbackResetTimer: ReturnType<typeof setTimeout> | undefined;
+const playbackSources = new Set<AudioBufferSourceNode>();
 let activeSessionId: string | undefined;
 let captureGeneration = 0;
 let monitorActive = false;
@@ -29,6 +42,9 @@ let preRoll: Float32Array[] = [];
 let preRollSamples = 0;
 const PRE_ROLL_LIMIT = 4_800;
 const MAX_UTTERANCE_MS = 30_000;
+const PLAYBACK_PREROLL_SECONDS = 0.12;
+const PLAYBACK_MIN_LEAD_SECONDS = 0.035;
+const PLAYBACK_REBUFFER_SECONDS = 0.08;
 
 window.obscurPilotAudio.onCommand((raw) => {
   const command = raw as AudioCommand;
@@ -46,6 +62,9 @@ window.obscurPilotAudio.onCommand((raw) => {
     suppressed = command.suppressed;
     if (suppressed) finishUtterance();
   }
+  if (command.kind === 'agent-audio') playAgentAudio(command.bytes, command.sampleRate);
+  if (command.kind === 'agent-audio-stop') stopAgentAudio();
+  if (command.kind === 'agent-audio-done') finishAgentAudioPlayback();
 });
 
 async function startManual(sessionId: string, deviceId: string): Promise<void> {
@@ -139,7 +158,9 @@ async function acquire(
 }
 
 function processVad(samples: Float32Array, level: number): void {
-  if (!monitorActive || suppressed) return;
+  if (!monitorActive) return;
+  window.obscurPilotAudio.emit({ kind: 'realtime-samples', samples, level });
+  if (suppressed) return;
   const now = performance.now();
   if (activeSessionId === undefined) {
     rememberPreRoll(samples);
@@ -165,6 +186,84 @@ function processVad(samples: Float32Array, level: number): void {
   if (now - lastSpeechAt >= silenceReleaseMs || now - speechStartedAt >= MAX_UTTERANCE_MS) {
     finishUtterance();
   }
+}
+
+function playAgentAudio(rawBytes: Uint8Array, sampleRate: number): void {
+  if (!(rawBytes instanceof Uint8Array) || rawBytes.byteLength < 2) return;
+  const boundedRate = Number.isFinite(sampleRate)
+    ? Math.max(8_000, Math.min(48_000, Math.round(sampleRate)))
+    : 24_000;
+  clearTimeout(playbackResetTimer);
+  playbackResetTimer = undefined;
+  playbackContext ??= new AudioContext({ latencyHint: 'playback', sampleRate: boundedRate });
+  const context = playbackContext;
+  if (context.state === 'suspended') void context.resume();
+  const evenLength = rawBytes.byteLength - (rawBytes.byteLength % 2);
+  const view = new DataView(rawBytes.buffer, rawBytes.byteOffset, evenLength);
+  const channel = new Float32Array(evenLength / 2);
+  for (let index = 0; index < channel.length; index += 1) {
+    channel[index] = view.getInt16(index * 2, true) / 0x8000;
+  }
+  const buffer = context.createBuffer(1, channel.length, boundedRate);
+  buffer.copyToChannel(channel, 0);
+  const source = context.createBufferSource();
+  source.buffer = buffer;
+  source.connect(context.destination);
+  const generation = playbackGeneration;
+  playbackSources.add(source);
+  source.addEventListener(
+    'ended',
+    () => {
+      playbackSources.delete(source);
+      source.disconnect();
+      if (generation !== playbackGeneration) return;
+    },
+    { once: true },
+  );
+  const minimumLeadAt = context.currentTime + PLAYBACK_MIN_LEAD_SECONDS;
+  const startAt = !playbackStreamOpen
+    ? context.currentTime + PLAYBACK_PREROLL_SECONDS
+    : playbackNextAt >= minimumLeadAt
+      ? playbackNextAt
+      : context.currentTime + PLAYBACK_REBUFFER_SECONDS;
+  playbackStreamOpen = true;
+  source.start(startAt);
+  playbackNextAt = startAt + buffer.duration;
+}
+
+function finishAgentAudioPlayback(): void {
+  clearTimeout(playbackResetTimer);
+  const context = playbackContext;
+  if (context === undefined) {
+    playbackNextAt = 0;
+    playbackStreamOpen = false;
+    return;
+  }
+  const remainingMs = Math.max(0, (playbackNextAt - context.currentTime) * 1_000);
+  const generation = playbackGeneration;
+  playbackResetTimer = setTimeout(() => {
+    if (generation !== playbackGeneration) return;
+    playbackNextAt = 0;
+    playbackStreamOpen = false;
+    playbackResetTimer = undefined;
+  }, remainingMs + 80);
+}
+
+function stopAgentAudio(): void {
+  playbackGeneration += 1;
+  clearTimeout(playbackResetTimer);
+  playbackResetTimer = undefined;
+  playbackNextAt = 0;
+  playbackStreamOpen = false;
+  for (const source of playbackSources) {
+    try {
+      source.stop();
+    } catch {
+      // A completed Web Audio source is already stopped.
+    }
+    source.disconnect();
+  }
+  playbackSources.clear();
 }
 
 function rememberPreRoll(samples: Float32Array): void {

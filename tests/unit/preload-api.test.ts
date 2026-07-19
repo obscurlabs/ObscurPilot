@@ -29,9 +29,35 @@ class FakeRendererIpc {
             node: '24',
           },
           configuration: {
+            deepgramConfigured: false,
             groqConfigured: false,
             supabaseConfigured: false,
             twitchConfigured: false,
+          },
+        },
+      };
+    }
+    if (
+      channel === IPC_CHANNELS.onboardingGetProjection ||
+      channel === IPC_CHANNELS.onboardingPairObs ||
+      channel === IPC_CHANNELS.onboardingClearObs
+    ) {
+      return {
+        ok: true,
+        requestId,
+        data: {
+          schemaVersion: 1,
+          complete: false,
+          nextStep: 'account',
+          account: { status: 'current', ready: false, reasonCode: 'SIGN_IN_REQUIRED' },
+          twitch: { status: 'waiting', ready: false, reasonCode: 'CLOUD_AUTH_REQUIRED' },
+          obs: {
+            status: 'waiting',
+            ready: false,
+            reasonCode: 'NOT_SYNCHRONIZED',
+            endpoint: 'ws://127.0.0.1:4455',
+            passwordStored: false,
+            secureStorageAvailable: true,
           },
         },
       };
@@ -97,6 +123,9 @@ describe('preload capability API', () => {
       'onAgentInteractionChanged',
       'getObsSnapshot',
       'reconnectObs',
+      'getOnboarding',
+      'pairObs',
+      'clearObsPairing',
       'getCloudAuth',
       'signInCloud',
       'signUpCloud',
@@ -124,6 +153,7 @@ describe('preload capability API', () => {
     ]);
     await expect(api.getBootstrap()).resolves.toMatchObject({ app: { name: 'ObscurPilot' } });
     await expect(api.getSnapshot()).resolves.toMatchObject({ snapshotVersion: 0 });
+    await expect(api.getOnboarding()).resolves.toMatchObject({ nextStep: 'account' });
     expect(Object.isFrozen(api)).toBe(true);
   });
 

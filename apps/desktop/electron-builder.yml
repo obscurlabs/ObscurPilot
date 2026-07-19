@@ -7,5 +7,10 @@ files:
   - dist-electron/**/*
   - dist-renderer/**/*
   - package.json
+asarUnpack:
+  - node_modules/sherpa-onnx-*/**/*
+extraResources:
+  - from: resources/wake-word
+    to: wake-word
 win:
   executableName: ObscurPilot

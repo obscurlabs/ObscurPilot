@@ -12,6 +12,11 @@ export class HandsFreeConversation {
   private preferencesValue: HandsFreePreferences;
   private projectionValue: HandsFreeProjection;
   private activeUntil = 0;
+  private wakeWord: HandsFreeProjection['wakeWord'];
+  private realtimeMetadata: Pick<
+    HandsFreeProjection,
+    'provider' | 'connected' | 'currentTask' | 'lastTranscript' | 'lastLatencyMs'
+  > = {};
 
   public constructor(
     preferences: HandsFreePreferences,
@@ -37,6 +42,24 @@ export class HandsFreeConversation {
     return this.preferencesValue;
   }
 
+  public isSessionActive(): boolean {
+    return this.activeUntil > this.now();
+  }
+
+  public activateWake(): void {
+    this.extendSession();
+    this.publish({ phase: 'listening', reasonCode: 'LOCAL_WAKE_WORD_DETECTED', level: 0 });
+  }
+
+  public setWakeWordStatus(status: NonNullable<HandsFreeProjection['wakeWord']>): void {
+    this.wakeWord = status;
+    this.publish({
+      phase: this.projectionValue.phase,
+      reasonCode: this.projectionValue.reasonCode,
+      level: this.projectionValue.level,
+    });
+  }
+
   public setPreferences(preferences: HandsFreePreferences): HandsFreeProjection {
     this.preferencesValue = HandsFreePreferencesSchema.parse(preferences);
     if (!preferences.enabled) this.activeUntil = 0;
@@ -60,6 +83,39 @@ export class HandsFreeConversation {
 
   public beginTranscription(): void {
     this.publish({ phase: 'transcribing', reasonCode: 'UNDERSTANDING_SPEECH', level: 0 });
+  }
+
+  public realtimePhase(
+    phase:
+      | 'connecting'
+      | 'standby'
+      | 'listening'
+      | 'reasoning'
+      | 'tool_active'
+      | 'speaking'
+      | 'interrupted'
+      | 'recovering'
+      | 'error',
+    reasonCode: string,
+    metadata: Partial<
+      Pick<
+        HandsFreeProjection,
+        'provider' | 'connected' | 'currentTask' | 'lastTranscript' | 'lastLatencyMs'
+      >
+    > = {},
+  ): void {
+    this.realtimeMetadata = {
+      ...this.realtimeMetadata,
+      ...metadata,
+      ...(phase === 'tool_active' ? {} : { currentTask: undefined }),
+    };
+    if (!this.preferencesValue.enabled) {
+      this.activeUntil = 0;
+      this.publish({ phase: 'disabled', reasonCode: 'HANDS_FREE_DISABLED', level: 0 });
+      return;
+    }
+    if (phase !== 'error') this.extendSession();
+    this.publish({ phase, reasonCode, level: 0 });
   }
 
   public acceptTranscript(
@@ -101,14 +157,17 @@ export class HandsFreeConversation {
       return;
     }
     if (agent.phase === 'error') {
-      this.publish({ phase: 'error', reasonCode: agent.reasonCode, level: 0 });
+      this.speak(failureSpeech(agent.reasonCode), 'COMMAND_FAILED');
       return;
     }
     if (agent.phase === 'completed' || agent.phase === 'idle') {
       // Terminal agent state replaces a prior error immediately. Without this,
       // the always-visible pilot overlay can keep showing Error after a
       // newer command succeeds.
-      if (this.projectionValue.phase !== 'speaking') {
+      if (
+        this.projectionValue.phase !== 'speaking' ||
+        this.projectionValue.reasonCode === 'COMMAND_FAILED'
+      ) {
         this.publish({
           phase: 'standby',
           reasonCode:
@@ -152,8 +211,10 @@ export class HandsFreeConversation {
     const sessionActive = this.activeUntil > this.now();
     this.projectionValue = this.parse({
       ...next,
+      ...withoutUndefined(this.realtimeMetadata),
       enabled: this.preferencesValue.enabled,
       wakePhrase: this.preferencesValue.wakePhrase,
+      ...(this.wakeWord === undefined ? {} : { wakeWord: this.wakeWord }),
       sessionActive,
       ...(sessionActive ? { sessionExpiresAt: new Date(this.activeUntil).toISOString() } : {}),
     });
@@ -163,6 +224,12 @@ export class HandsFreeConversation {
   private parse(value: unknown): HandsFreeProjection {
     return HandsFreeProjectionSchema.parse(value);
   }
+}
+
+function withoutUndefined<T extends Readonly<Record<string, unknown>>>(value: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  ) as Partial<T>;
 }
 
 function findWakePhrase(text: string, wakePhrase: string): { readonly end: number } | undefined {
@@ -185,4 +252,33 @@ function normalize(value: string): string {
     .replace(/[^a-z0-9 ]/gu, ' ')
     .replace(/\s+/gu, ' ')
     .trim();
+}
+
+export function failureSpeech(reasonCode: string): string {
+  const messages: Readonly<Record<string, string>> = {
+    RATE_LIMITED:
+      'The voice provider is rate limited after automatic retries. Wait for its reset, then repeat the request.',
+    AUTH_REQUIRED:
+      'A provider rejected its credentials. Reconnect the affected account, then repeat the request.',
+    NOT_CONFIGURED:
+      'A required provider is not configured. Open Connections and complete its setup.',
+    UPSTREAM_UNAVAILABLE:
+      'A required provider is temporarily unavailable after automatic retries. Keep OBS open and try again shortly.',
+    TIMEOUT:
+      'The provider did not finish in time after automatic retries. Try the same request again.',
+    CIRCUIT_OPEN:
+      'The provider recovery circuit is cooling down. Wait briefly, then repeat the request.',
+    NO_SPEECH: 'I did not receive enough clear speech. Please repeat the command.',
+    OBS_NOT_READY: 'OBS is not connected. Start OBS, then repeat the command.',
+    AUTHORIZATION_REQUIRED:
+      'Twitch authorization is required. Complete the opened Twitch sign-in, then say continue.',
+    LOOP_LIMIT_REACHED:
+      'That request exceeded the bounded execution limit. Repeat it as one stream setup request.',
+    TOOL_ARGUMENT_INVALID:
+      'The production plan contained invalid provider data. Refresh the runtime state and repeat the request.',
+  };
+  return (
+    messages[reasonCode] ??
+    `The production request could not finish. The failure code is ${reasonCode.replaceAll('_', ' ').toLocaleLowerCase('en-US')}.`
+  );
 }

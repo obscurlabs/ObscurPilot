@@ -16,6 +16,23 @@ describe('main-process environment configuration', () => {
     expect(environment.GROQ_STT_MODEL).toBe('whisper-large-v3-turbo');
     expect(environment.GROQ_REASONING_MODEL).toBe('openai/gpt-oss-120b');
     expect(environment.OBS_WEBSOCKET_URL).toBe('ws://127.0.0.1:4455');
+    expect(environment.WAKE_WORD_ENGINE).toBe('sherpa_onnx');
+    expect(environment.WAKE_WORD_COOLDOWN_MS).toBe(2_000);
+  });
+
+  it('normalizes the documented hyphenated offline wake engine alias', () => {
+    const environment = parseEnvironment({
+      WAKE_WORD_ENGINE: 'sherpa-onnx',
+      WAKE_WORD_PHRASE: 'hi obscur',
+      WAKE_WORD_THRESHOLD: '0.55',
+      WAKE_WORD_COOLDOWN_MS: '2000',
+    });
+    expect(environment).toMatchObject({
+      WAKE_WORD_ENGINE: 'sherpa_onnx',
+      WAKE_WORD_PHRASE: 'hi obscur',
+      WAKE_WORD_THRESHOLD: 0.55,
+      WAKE_WORD_COOLDOWN_MS: 2_000,
+    });
   });
 
   it('rejects a non-loopback development server', () => {

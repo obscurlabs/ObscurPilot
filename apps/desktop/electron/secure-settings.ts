@@ -26,6 +26,7 @@ const SettingsSchema = z
       scale: 1,
       clickThrough: true,
     }),
+    obsWebSocketPassword: z.string().min(1).max(256).optional(),
     liveSessionProfiles: z.array(LiveSessionProfileV1Schema).max(20).default([]),
     activeLiveSessionProfileId: z.string().uuid().optional(),
   })
@@ -50,6 +51,10 @@ export class SecureSettingsStore {
 
   public snapshot(): SecureSettings {
     return { ...this.value };
+  }
+
+  public encryptionAvailable(): boolean {
+    return safeStorage.isEncryptionAvailable();
   }
 
   public async update(patch: Partial<SecureSettings>): Promise<void> {

@@ -1,5 +1,5 @@
 import type { AgentInteractionProjection } from '@obscurpilot/contracts/agent';
-import type { PttProjection } from '@obscurpilot/contracts/audio';
+import type { HandsFreeProjection, PttProjection } from '@obscurpilot/contracts/audio';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from './ui/button';
 
@@ -14,6 +14,14 @@ const INITIAL_AGENT: AgentInteractionProjection = {
   phase: 'idle',
   reasonCode: 'IDLE',
   elapsedMs: 0,
+};
+const INITIAL_HANDS_FREE: HandsFreeProjection = {
+  phase: 'arming',
+  reasonCode: 'MICROPHONE_ARMING',
+  enabled: true,
+  wakePhrase: 'Hi Obscur',
+  level: 0,
+  sessionActive: false,
 };
 
 const LABELS: Record<PttProjection['phase'], string> = {
@@ -54,6 +62,7 @@ export function VoicePresence({
 }) {
   const [projection, setProjection] = useState<PttProjection>(INITIAL);
   const [agent, setAgent] = useState<AgentInteractionProjection>(INITIAL_AGENT);
+  const [handsFree, setHandsFree] = useState<HandsFreeProjection>(INITIAL_HANDS_FREE);
   const [decisionPending, setDecisionPending] = useState(false);
   const [decisionNotice, setDecisionNotice] = useState<string>();
   const [clock, setClock] = useState(() => Date.now());
@@ -104,6 +113,21 @@ export function VoicePresence({
   }, [onAgentActivity]);
 
   useEffect(() => {
+    let active = true;
+    void window.obscurPilot.getHandsFreeProjection().then((next) => {
+      if (active) setHandsFree(next);
+    });
+    const unsubscribe = window.obscurPilot.onHandsFreeChanged((next) => {
+      orbRef.current?.style.setProperty('--voice-energy', next.level.toFixed(3));
+      if (active) setHandsFree({ ...next, level: 0 });
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     if (agent.confirmation === undefined) return;
     const timer = window.setInterval(() => setClock(Date.now()), 1_000);
     return () => window.clearInterval(timer);
@@ -139,9 +163,22 @@ export function VoicePresence({
   };
 
   const agentActive = agent.phase !== 'idle';
-  const label = agentActive ? AGENT_LABELS[agent.phase] : LABELS[projection.phase];
-  const reasonCode = agentActive ? agent.reasonCode : projection.reasonCode;
-  const visualPhase = agentActive ? agent.phase : projection.phase;
+  const realtimeActive = handsFree.provider === 'deepgram' && handsFree.enabled;
+  const label = realtimeActive
+    ? realtimeVoiceLabel(handsFree)
+    : agentActive
+      ? AGENT_LABELS[agent.phase]
+      : LABELS[projection.phase];
+  const reasonCode = realtimeActive
+    ? handsFree.reasonCode
+    : agentActive
+      ? agent.reasonCode
+      : projection.reasonCode;
+  const visualPhase = realtimeActive
+    ? handsFree.phase
+    : agentActive
+      ? agent.phase
+      : projection.phase;
   const currentStep = AGENT_STEPS.findIndex((step) => step.phase === agent.phase);
   const confirmationRemainingMs =
     agent.confirmation === undefined
@@ -160,8 +197,15 @@ export function VoicePresence({
         <p className="eyebrow">Voice boundary</p>
         <h2 id="voice-presence-title">Agent presence</h2>
         <p className="voice-copy">
-          Hold the control while speaking. The global shortcut toggles capture when this window is
-          not focused.
+          {!handsFree.enabled
+            ? 'Hands-free listening is off. Enable it in Settings to use the wake phrase.'
+            : handsFree.connected
+              ? 'Realtime voice is active. Say ' +
+                handsFree.wakePhrase +
+                ', then continue naturally; interrupt at any time.'
+              : 'Hands-free fallback is active. Say ' +
+                handsFree.wakePhrase +
+                ', then speak naturally; no button is required.'}
         </p>
       </div>
       <button
@@ -202,6 +246,34 @@ export function VoicePresence({
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {label}
       </div>
+      {realtimeActive ? (
+        <dl className="realtime-voice-telemetry" aria-label="Realtime voice status">
+          <div>
+            <dt>Voice route</dt>
+            <dd>{handsFree.connected ? 'Deepgram realtime' : 'Groq fallback'}</dd>
+          </div>
+          <div>
+            <dt>Wake boundary</dt>
+            <dd>
+              {handsFree.wakeWord?.engine === 'sherpa_onnx'
+                ? 'Offline · sherpa-onnx'
+                : 'Transcript fallback'}
+            </dd>
+          </div>
+          <div>
+            <dt>Current task</dt>
+            <dd>{handsFree.currentTask?.replaceAll('_', ' ') ?? 'Conversation ready'}</dd>
+          </div>
+          <div>
+            <dt>Turn latency</dt>
+            <dd>
+              {handsFree.lastLatencyMs === undefined
+                ? 'Measuring'
+                : handsFree.lastLatencyMs + ' ms'}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
       {agentActive ? (
         <div className="agent-state-panel" aria-label="Agent command progress">
           <ol className="agent-progress">
@@ -292,4 +364,19 @@ export function VoicePresence({
       ) : null}
     </section>
   );
+}
+
+function realtimeVoiceLabel(projection: HandsFreeProjection): string {
+  const labels: Partial<Record<HandsFreeProjection['phase'], string>> = {
+    connecting: 'Connecting realtime voice',
+    standby: projection.connected ? 'Realtime voice ready' : 'Voice fallback ready',
+    listening: 'Listening continuously',
+    reasoning: 'Understanding command',
+    tool_active: 'Applying production task',
+    speaking: 'ObscurPilot speaking',
+    interrupted: 'Listening to interruption',
+    recovering: 'Restoring realtime voice',
+    error: 'Realtime voice unavailable',
+  };
+  return labels[projection.phase] ?? projection.phase.replaceAll('_', ' ');
 }

@@ -131,6 +131,25 @@ describe('OBS authoritative bridge', () => {
     await mismatchBridge.dispose();
   });
 
+  it('re-pairs with a candidate password and returns synchronized truth', async () => {
+    const fake = createTransport();
+    const bridge = new ObsBridge({
+      url: 'ws://127.0.0.1:4455',
+      transport: fake.transport,
+      onConnection: () => undefined,
+      id: () => ID,
+    });
+    bridge.start();
+    await vi.waitFor(() => expect(bridge.snapshot()).toBeDefined());
+    const snapshot = await bridge.reconfigurePassword('one-time-secret');
+    expect(snapshot.currentProgramSceneName).toBe('Program');
+    expect(fake.transport.connect).toHaveBeenLastCalledWith(
+      'ws://127.0.0.1:4455',
+      'one-time-secret',
+    );
+    await bridge.dispose();
+  });
+
   it('enforces state preconditions, deduplicates success, and never replays uncertainty', async () => {
     const fake = createTransport();
     const bridge = new ObsBridge({

@@ -226,6 +226,10 @@ export class TwitchBridge {
     return this.requireRuntime().updateMetadata(metadata);
   }
 
+  public readMetadata(): Promise<TwitchMetadata> {
+    return this.requireRuntime().readMetadata();
+  }
+
   public isLive(): Promise<boolean> {
     return this.requireRuntime().isLive();
   }

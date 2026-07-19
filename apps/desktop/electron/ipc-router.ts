@@ -7,6 +7,7 @@ import {
 import type { PublicError, PublicErrorCode } from '@obscurpilot/contracts/errors';
 import type { IpcMain, IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
+import { redactText } from './redaction.js';
 
 export class PublicFault extends Error {
   public constructor(
@@ -51,6 +52,9 @@ export function registerSecureHandler<Input, Output>(
         if (!options.isTrustedSender(event)) {
           throw new PublicFault('PERMISSION_DENIED', 'Request sender is not trusted');
         }
+        if (hasUnsafeObjectShape(rawRequest)) {
+          throw new PublicFault('VALIDATION_FAILED', 'IPC request contains an unsafe object shape');
+        }
         if (serializedSize(rawRequest) > MAX_IPC_ENVELOPE_BYTES) {
           throw new PublicFault('VALIDATION_FAILED', 'IPC request exceeds the size limit');
         }
@@ -81,7 +85,7 @@ export function mapPublicError(error: unknown): PublicError {
   if (error instanceof PublicFault) {
     return {
       code: error.code,
-      message: error.message,
+      message: redactText(error.message),
       retryable: error.retryable,
       correlationId,
     };
@@ -116,4 +120,31 @@ function serializedSize(value: unknown): number {
   } catch {
     return Number.POSITIVE_INFINITY;
   }
+}
+
+function hasUnsafeObjectShape(value: unknown): boolean {
+  const pending: Array<{ readonly value: unknown; readonly depth: number }> = [{ value, depth: 0 }];
+  const seen = new WeakSet<object>();
+  while (pending.length > 0) {
+    const item = pending.pop();
+    if (item === undefined || typeof item.value !== 'object' || item.value === null) continue;
+    if (item.depth > 32 || seen.has(item.value)) return true;
+    seen.add(item.value);
+    if (!Array.isArray(item.value)) {
+      const prototype = Object.getPrototypeOf(item.value) as unknown;
+      if (prototype !== Object.prototype && prototype !== null) return true;
+    }
+    let descriptors: Record<string, PropertyDescriptor>;
+    try {
+      descriptors = Object.getOwnPropertyDescriptors(item.value);
+    } catch {
+      return true;
+    }
+    for (const [key, descriptor] of Object.entries(descriptors)) {
+      if (key === '__proto__' || key === 'prototype' || key === 'constructor') return true;
+      if ('get' in descriptor || 'set' in descriptor) return true;
+      pending.push({ value: descriptor.value, depth: item.depth + 1 });
+    }
+  }
+  return false;
 }

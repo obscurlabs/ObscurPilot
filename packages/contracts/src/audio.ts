@@ -76,12 +76,16 @@ export type HandsFreePreferences = z.infer<typeof HandsFreePreferencesSchema>;
 export const HandsFreePhaseSchema = z.enum([
   'disabled',
   'arming',
+  'connecting',
   'standby',
   'listening',
   'transcribing',
   'reasoning',
+  'tool_active',
   'awaiting_confirmation',
   'speaking',
+  'interrupted',
+  'recovering',
   'paused',
   'error',
 ]);
@@ -93,6 +97,19 @@ export const HandsFreeProjectionSchema = z
     wakePhrase: z.string().min(2).max(32),
     level: z.number().min(0).max(1),
     sessionActive: z.boolean(),
+    wakeWord: z
+      .object({
+        engine: z.enum(['sherpa_onnx', 'transcript']),
+        ready: z.boolean(),
+        reasonCode: z.string().min(1).max(96),
+      })
+      .strict()
+      .optional(),
+    provider: z.enum(['deepgram', 'groq_fallback', 'native']).optional(),
+    connected: z.boolean().optional(),
+    currentTask: z.string().trim().min(1).max(128).optional(),
+    lastTranscript: z.string().trim().min(1).max(2_000).optional(),
+    lastLatencyMs: z.number().int().nonnegative().max(120_000).optional(),
     sessionExpiresAt: z.string().datetime({ offset: true }).optional(),
     speech: z
       .object({ id: z.string().uuid(), text: z.string().trim().min(1).max(1_000) })

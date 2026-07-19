@@ -24,6 +24,7 @@ export const BootstrapProjectionSchema = z
       .strict(),
     configuration: z
       .object({
+        deepgramConfigured: z.boolean(),
         groqConfigured: z.boolean(),
         supabaseConfigured: z.boolean(),
         twitchConfigured: z.boolean(),

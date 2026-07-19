@@ -75,6 +75,7 @@ export function PilotOverlay() {
     }
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(speech.text);
+    utterance.voice = selectPilotVoice(window.speechSynthesis.getVoices());
     utterance.rate = 1.03;
     utterance.pitch = 0.96;
     utterance.volume = 0.86;
@@ -85,6 +86,7 @@ export function PilotOverlay() {
     return () => {
       utterance.removeEventListener('end', finish);
       utterance.removeEventListener('error', finish);
+      window.speechSynthesis.cancel();
     };
   }, [handsFree.phase, handsFree.speech]);
 
@@ -103,9 +105,17 @@ export function PilotOverlay() {
       ? 'Listening'
       : handsFree.phase === 'speaking'
         ? 'Speaking'
-        : handsFree.phase === 'awaiting_confirmation'
-          ? 'Say yes or no'
-          : handsFree.phase.replaceAll('_', ' ')
+        : handsFree.phase === 'tool_active'
+          ? 'Applying task'
+          : handsFree.phase === 'reasoning'
+            ? 'Thinking'
+            : handsFree.phase === 'recovering'
+              ? 'Restoring voice'
+              : handsFree.phase === 'interrupted'
+                ? 'Interrupted'
+                : handsFree.phase === 'awaiting_confirmation'
+                  ? 'Say yes or no'
+                  : handsFree.phase.replaceAll('_', ' ')
     : captureActive
       ? ptt.phase === 'capturing'
         ? 'Listening'
@@ -141,12 +151,26 @@ export function PilotOverlay() {
         <strong>{label}</strong>
         <span>
           {handsFree.phase === 'standby'
-            ? 'Say ' + handsFree.wakePhrase
-            : detail.replaceAll('_', ' ')}
+            ? handsFree.connected
+              ? 'Realtime ready · say ' + handsFree.wakePhrase
+              : 'Say ' + handsFree.wakePhrase
+            : handsFree.currentTask !== undefined
+              ? handsFree.currentTask.replaceAll('_', ' ')
+              : detail.replaceAll('_', ' ')}
         </span>
       </div>
       {session.phase === 'live' ? <span className="pilot-live">LIVE</span> : null}
     </main>
+  );
+}
+
+function selectPilotVoice(voices: readonly SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  const femaleName = /\b(zira|aria|jenny|samantha|susan|hazel|female)\b/iu;
+  return (
+    voices.find((voice) => femaleName.test(`${voice.name} ${voice.voiceURI}`)) ??
+    voices.find((voice) => voice.lang.toLocaleLowerCase('en-US').startsWith('en')) ??
+    voices[0] ??
+    null
   );
 }
 

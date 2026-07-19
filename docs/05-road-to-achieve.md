@@ -174,11 +174,85 @@ Status: **complete**. See the [Stage 10 acceptance record](stage-10/acceptance-r
 
 **Definition of Done:** static checks, unit tests, production build, preload-boundary E2E, hidden-audio shutdown E2E, and hosted tool-grant migration pass; background speech without the wake phrase is ignored; spoken confirmation cannot be self-approved by model output; microphone capture is suppressed during Pilot speech; a creator-observed dedicated-account run proves real microphone, OBS, and Twitch behavior.
 
-## Stage 12 — Controlled learning and evaluation
+## Stage 11.2 — Realtime voice transport
+
+**Objective:** replace clip-at-a-time hands-free turns with one low-latency Deepgram Voice Agent WebSocket while retaining Groq push-to-talk as automatic fallback.
+
+**Tasks:** keep the Deepgram key in Electron main; wait for `Welcome` before settings and `SettingsApplied` before audio; stream 16 kHz mono linear PCM; receive 24 kHz PCM; send keep-alives; enforce handshake timeouts; reconnect with 500 ms exponential backoff capped at 10 seconds; never expose credentials through preload or renderer state.
+
+**Definition of Done:** a key-safe hosted handshake returns `SettingsApplied`; audio cannot transmit before settings; socket loss returns capture to Groq fallback; the production Electron bundle contains the transport without creating a renderer secret path.
+
+## Stage 11.3 — Natural turn taking and continuity
+
+**Objective:** support continuous follow-up speech, streamed voice replies, interruption, and socket recovery without duplicate commands.
+
+**Tasks:** play streamed PCM through the isolated audio renderer; stop queued output immediately on `UserStartedSpeaking`; keep echo cancellation active; retain at most 24 bounded conversation/function history entries and 16 KB across reconnects; surface transcript, latency, listening, thinking, speaking, interrupted, recovering, and error states.
+
+**Definition of Done:** barge-in stops playback synchronously; reconnect settings include bounded prior context; no raw microphone clip or provider key persists; the corner Pilot remains usable with the control board hidden.
+
+## Stage 11.4 — Deterministic OBS/Twitch execution receipts
+
+**Objective:** connect Deepgram client-side function calls to the existing versioned Tool Registry without bypassing provider adapters, grants, parsing, or idempotency.
+
+**Tasks:** ingest only registered model descriptors; resolve every model name to an exact internal name/version; treat the current spoken creator instruction as approval only for its requested scope; execute through `ToolRegistry.invoke`; cap each tool at 90 seconds; cache 128 function-call receipts; return the same receipt for duplicate IDs; include correlation IDs and write cloud audit outcomes.
+
+**Definition of Done:** duplicate provider requests produce one side effect; unknown tools and invalid arguments fail closed; the agent cannot report success before an `ok: true` function response; OBS/Twitch authoritative projections remain the source of live truth.
+
+## Stage 11.5 — Compound task orchestration
+
+**Objective:** execute one spoken setup-and-start request as a bounded production workflow with truthful progress.
+
+**Tasks:** instruct the realtime agent to use `live_session_auto_prepare_v1` once for a compound game setup; default to zero countdown unless the creator asks for one; resolve Twitch category authoritatively; generate metadata from model knowledge; provision OBS resources; persist the versioned profile; start the immutable live plan when explicitly requested; project current tool and end-to-end latency.
+
+**Definition of Done:** “Set up Sekiro, create the best title and tags, and start streaming now” produces one correlated compound call with `mode=live`, `startNow=true`, and `countdownSeconds=0`; completion speech is based on the returned coordinator phase, never model assumption.
+
+## Stage 11.6 — Realtime operational experience and acceptance
+
+**Objective:** make provider, conversation, task, latency, fallback, interruption, and recovery truth immediately legible in the control board and protected corner Pilot.
+
+**Tasks:** extend typed hands-free projections; add provider configuration status; display realtime route/current task/turn latency; map all new phases to the existing orb motion system; preserve reduced-motion, focus, contrast, and responsive rules; add protocol, idempotency, barge-in, latency, projection, contract, and production-build gates.
+
+**Definition of Done:** static TypeScript and lint gates pass; 104 unit and 18 contract tests pass; production Electron build passes; hosted Deepgram settings handshake passes; a creator-observed microphone plus dedicated Twitch/OBS broadcast remains the only pending mutation gate.
+
+## Stage 11.7 — Local wake and desktop production foundation
+
+**Objective:** keep idle wake detection local and provide a narrowly allowlisted Windows boundary for OBS process and window readiness without granting arbitrary desktop control.
+
+**Tasks:** integrate the Apache-2.0 sherpa-onnx Node runtime; pin and checksum the official English keyword model; gate realtime audio behind a bounded two-second pre-roll until “Hi Obscur” is detected; retain transcript wake detection as automatic fallback; inspect and focus only the fixed 'obs64' process through non-interactive PowerShell; expose local/fallback wake readiness; keep push-to-talk available at all times; package native libraries and model assets outside ASAR.
+
+**Definition of Done:** the real native binding loads the checksum-verified model on Windows; idle audio is not forwarded to the realtime provider while local wake is ready; wake flushes pre-roll in sample order; missing/corrupt models degrade to transcript detection; malformed desktop inspection output is rejected; no voice text can select a process, executable, or script.
+
+## Stage 11.8 — Closed-loop verified execution
+
+**Objective:** report production completion only after OBS and Twitch return the requested authoritative state.
+
+**Tasks:** project typed preflight checks; read Twitch metadata back after mutation; reconcile OBS program-scene transitions; verify OBS plus Twitch online before live; verify both outputs offline before stop; attach per-step execution receipts; compensate Twitch metadata after a failed downstream operation; add a global emergency stop interlock at 'CommandOrControl+Shift+F12'.
+
+**Definition of Done:** stale Twitch metadata, missing OBS resources, scene mismatch, uncertain start, and uncertain stop all fail closed with actionable reason codes; every successful plan contains verified receipts for preflight, metadata, OBS preparation, output start, and authoritative live verification; no failed verification is spoken or rendered as complete.
+
+## Stage 11.9 — Reliability, latency, and fault acceptance
+
+**Objective:** make recovery and performance measurable before any superiority or four-nines reliability claim.
+
+**Tasks:** retain a bounded 10,000-operation reliability window; project verified/failed counts, success rate, p50/p95 latency, recovery attempts, and duplicate prevention; add native-model, audio-gate, desktop-parser, stale-readback, rollback, uncertain-stop, and 10,000-operation performance tests; show preflight evidence and recent execution receipts in the session console with accessible status text and reduced-motion-safe visuals.
+
+**Definition of Done:** all static, unit, contract, integration, chaos, performance, renderer-boundary, build, package, and Electron E2E gates pass; the reliability projection stays bounded and meets its local computation budget; a dedicated-account microphone/OBS/Twitch run remains the only creator-observed mutation gate. A 99.99% claim remains prohibited until a statistically sufficient real-device corpus passes.
+
+## Stage 12 — Production onboarding and secure provider pairing
+
+**Objective:** let a creator install ObscurPilot, authenticate, authorize Twitch, and pair local OBS without editing environment files or handling provider tokens.
+
+**Prerequisites:** Stage 7 hosted Twitch OAuth, Stage 10 control-board identity UX, and Stage 11 authoritative OBS/Twitch supervisors.
+
+**Tasks:** define a strict password-free onboarding projection; add account/Twitch/OBS ordered readiness; discover only the fixed loopback OBS endpoint; accept an optional OBS WebSocket password through schema-bounded IPC; test the candidate through an OBS 30+/RPC 1 handshake before persistence; encrypt the accepted password with Electron 'safeStorage'; compensate to the prior password after failed re-pair; add forget/re-pair behavior; reuse browser Twitch OAuth; provide inline error recovery, accessible setup progress, user-controlled dismissal, responsive layouts, and reduced-motion behavior; retain the development environment password only as a migration fallback.
+
+**Definition of Done:** no OBS password, OAuth token, client secret, or unrestricted endpoint crosses preload; a rejected password is never persisted; a successful password survives restart through OS encryption; clearing removes it; Twitch remains one-click OAuth; provider truth automatically advances setup; static, contract, integration, renderer-boundary, dependency, build, accessibility, Electron lifecycle, and packaged-startup gates pass.
+
+## Stage 12.1 — Controlled learning and evaluation
 
 **Objective:** improve personal relevance through explicit feedback without unsafe online self-modification.
 
-**Prerequisites:** Stage 9 audit/version data, Stage 10 feedback UX, and Stage 11 workflow/moderation outcomes.
+**Prerequisites:** Stage 9 audit/version data, Stage 10 feedback UX, Stage 11 workflow/moderation outcomes, and Stage 12 production identity.
 
 **Tasks:** implement preference facts with provenance/confidence/expiry; feedback capture; redaction; evaluation dataset builder; offline replay harness; candidate policy/prompt versioning; acceptance thresholds; shadow evaluation; rollback; opt-in and deletion controls.
 
@@ -188,7 +262,7 @@ Status: **complete**. See the [Stage 10 acceptance record](stage-10/acceptance-r
 
 **Objective:** prove the whole system under failure, load, and hostile input.
 
-**Prerequisites:** Stages 1–12 feature-complete.
+**Prerequisites:** Stages 1–12.1 feature-complete.
 
 **Tasks:** run threat-model review; dependency/SBOM/signing scans; IPC and schema fuzzing; chaos proxy tests; OBS/Twitch/Groq/Supabase outage matrix; clock/network/device fault injection; long-session soak; renderer profiling; memory/handle leak detection; log-redaction canaries; database load/index analysis.
 

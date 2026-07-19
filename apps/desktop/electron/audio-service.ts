@@ -47,6 +47,19 @@ const AudioInternalEventSchema = z.discriminatedUnion('kind', [
     .strict(),
   z
     .object({
+      kind: z.literal('realtime-samples'),
+      samples: z.custom<Float32Array>(
+        (value) =>
+          value instanceof Float32Array &&
+          value.length > 0 &&
+          value.length <= 4_096 &&
+          value.every(Number.isFinite),
+      ),
+      level: z.number().min(0).max(1),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal('devices'),
       requestId: z.string().uuid(),
       devices: AudioDeviceListSchema.shape.devices,
@@ -64,6 +77,7 @@ export class PttAudioService {
   private watchdog: ReturnType<typeof setTimeout> | undefined;
   private accelerator = '';
   private disposed = false;
+  private realtimeStreaming = false;
   private handsFreeSessions = new Set<string>();
   private handsFree: HandsFreePreferences = HandsFreePreferencesSchema.parse({
     enabled: false,
@@ -89,6 +103,8 @@ export class PttAudioService {
       reasonCode: string,
       level?: number,
     ) => void,
+    private readonly onRealtimeAudio?: (samples: Int16Array, level: number) => void,
+    private readonly shortcutsEnabled = true,
   ) {
     this.pipeline = new PttAudioPipeline({
       onProjection: (projection) => this.publish(projection),
@@ -172,6 +188,36 @@ export class PttAudioService {
     );
   }
 
+  public setRealtimeStreaming(active: boolean): void {
+    this.realtimeStreaming = active;
+    if (active && this.handsFree.enabled) {
+      this.captureWindow.webContents.send(INTERNAL_COMMAND, {
+        kind: 'suppress',
+        suppressed: false,
+      });
+      this.onHandsFreeAudio?.('standby', 'DEEPGRAM_REALTIME_READY');
+    }
+  }
+
+  public playAgentAudio(bytes: Uint8Array, sampleRate: number): void {
+    if (this.disposed || bytes.byteLength === 0) return;
+    this.captureWindow.webContents.send(INTERNAL_COMMAND, {
+      kind: 'agent-audio',
+      bytes,
+      sampleRate,
+    });
+  }
+
+  public stopAgentAudio(): void {
+    if (this.disposed) return;
+    this.captureWindow.webContents.send(INTERNAL_COMMAND, { kind: 'agent-audio-stop' });
+  }
+
+  public finishAgentAudio(): void {
+    if (this.disposed) return;
+    this.captureWindow.webContents.send(INTERNAL_COMMAND, { kind: 'agent-audio-done' });
+  }
+
   public listDevices(): Promise<{ devices: AudioDevice[] }> {
     const requestId = randomUUID();
     return new Promise((resolve) => {
@@ -196,7 +242,9 @@ export class PttAudioService {
     if (this.disposed) return;
     this.disposed = true;
     clearTimeout(this.watchdog);
-    if (this.accelerator !== '') globalShortcut.unregister(this.accelerator);
+    if (this.shortcutsEnabled && this.accelerator !== '') {
+      globalShortcut.unregister(this.accelerator);
+    }
     this.pipeline.cancel('SHUTDOWN');
     this.captureWindow.webContents.send(INTERNAL_COMMAND, { kind: 'monitor-stop' });
     this.vault.dispose();
@@ -230,11 +278,17 @@ export class PttAudioService {
     }
     if (message.kind === 'utterance-stopped') {
       this.pipeline.release(message.sessionId);
-      this.onHandsFreeAudio?.('standby', 'UTTERANCE_CAPTURED');
+      this.onHandsFreeAudio?.(
+        'standby',
+        this.realtimeStreaming ? 'REALTIME_TURN_CAPTURED' : 'UTTERANCE_CAPTURED',
+      );
     }
     if (message.kind === 'started') this.pipeline.armed(message.sessionId);
     if (message.kind === 'samples') {
       this.pipeline.append(message.sessionId, message.samples, message.level);
+    }
+    if (message.kind === 'realtime-samples') {
+      this.onRealtimeAudio?.(floatToPcm16(message.samples), message.level);
     }
     if (message.kind === 'stopped') this.pipeline.release(message.sessionId);
     if (message.kind === 'cancelled') this.pipeline.cancel();
@@ -265,6 +319,10 @@ export class PttAudioService {
 
   private setAcceleratorRegistration(accelerator: string): void {
     if (accelerator === this.accelerator) return;
+    if (!this.shortcutsEnabled) {
+      this.accelerator = accelerator;
+      return;
+    }
     const registered = globalShortcut.register(accelerator, () => {
       const phase = this.pipeline.projection().phase;
       if (phase === 'arming' || phase === 'capturing') this.release();
@@ -296,4 +354,13 @@ export class PttAudioService {
     if (owned === undefined) return;
     void Promise.resolve(this.onClip(owned, source)).finally(() => owned.bytes.fill(0));
   }
+}
+
+function floatToPcm16(samples: Float32Array): Int16Array {
+  const pcm = new Int16Array(samples.length);
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = Math.max(-1, Math.min(1, samples[index] ?? 0));
+    pcm[index] = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff);
+  }
+  return pcm;
 }

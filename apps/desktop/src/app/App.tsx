@@ -2,6 +2,7 @@ import type { AgentInteractionProjection } from '@obscurpilot/contracts/agent';
 import type { BootstrapProjection } from '@obscurpilot/contracts/bootstrap';
 import type { CloudAuthProjection } from '@obscurpilot/contracts/cloud';
 import type { ObsProjection } from '@obscurpilot/contracts/obs';
+import type { OnboardingProjection } from '@obscurpilot/contracts/onboarding';
 import type { AppSnapshot, ConnectionProjection } from '@obscurpilot/contracts/state';
 import type { TwitchProjection } from '@obscurpilot/contracts/twitch';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
@@ -14,6 +15,7 @@ import { Card, CardContent, CardHeader } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
 import { VoicePresence } from '../components/voice-presence';
 import { LiveSessionConsole } from '../components/live-session-console';
+import { OnboardingPanel } from '../components/onboarding-panel';
 import {
   activitiesFromSnapshot,
   activityFromAgent,
@@ -51,7 +53,7 @@ function ConfigurationStatus({
     <div className="status-row">
       <span>{label}</span>
       <Badge tone={configured ? 'ready' : 'waiting'}>
-        {configured ? 'Configured' : 'Waiting for .env'}
+        {configured ? 'Service ready' : 'Service unavailable'}
       </Badge>
     </div>
   );
@@ -335,6 +337,8 @@ export function App() {
   const snapshotRef = useRef<AppSnapshot | undefined>(undefined);
   const [cloudProjection, setCloudProjection] = useState<CloudAuthProjection | undefined>();
   const [twitchProjection, setTwitchProjection] = useState<TwitchProjection | undefined>();
+  const [onboarding, setOnboarding] = useState<OnboardingProjection>();
+  const [onboardingVisible, setOnboardingVisible] = useState(true);
   const [activities, setActivities] = useState<readonly ActivityItem[]>([]);
   const [restoredVersion, setRestoredVersion] = useState<number>();
   const [restorationVisible, setRestorationVisible] = useState(true);
@@ -371,19 +375,21 @@ export function App() {
 
   const refreshRuntime = useCallback(async () => {
     try {
-      const [bootstrap, snapshot, obs, cloud, twitch, handsFree] = await Promise.all([
+      const [bootstrap, snapshot, obs, cloud, twitch, handsFree, setup] = await Promise.all([
         window.obscurPilot.getBootstrap(),
         window.obscurPilot.getSnapshot(snapshotRef.current?.snapshotVersion),
         window.obscurPilot.getObsSnapshot(),
         window.obscurPilot.getCloudAuth(),
         window.obscurPilot.getTwitchProjection(),
         window.obscurPilot.getHandsFreeProjection(),
+        window.obscurPilot.getOnboarding(),
       ]);
       handsFreeEnabledRef.current = handsFree.enabled;
       snapshotRef.current = snapshot;
       setObsProjection(obs);
       setCloudProjection(cloud);
       setTwitchProjection(twitch);
+      setOnboarding(setup);
       setLoadState({ status: 'ready', bootstrap, snapshot });
       setRestoredVersion(snapshot.snapshotVersion);
       setRestorationVisible(true);
@@ -414,6 +420,7 @@ export function App() {
 
   const announceConnection = useCallback(
     (connection: ConnectionProjection) => {
+      if (handsFreeEnabledRef.current) return;
       const current = preferencesRef.current;
       if (!current.announceConnectionChanges) return;
       const announcement = announcementForConnection(connection);
@@ -450,6 +457,10 @@ export function App() {
       setTwitchActionPending(false);
     }
   };
+
+  const refreshOnboarding = useCallback(() => {
+    void window.obscurPilot.getOnboarding().then(setOnboarding);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -501,6 +512,7 @@ export function App() {
       }
       if (event.patches.some((patch) => patch.kind === 'connection' && patch.provider === 'obs')) {
         refreshObs();
+        refreshOnboarding();
       }
       if (
         event.patches.some((patch) => patch.kind === 'connection' && patch.provider === 'twitch')
@@ -508,6 +520,7 @@ export function App() {
         void window.obscurPilot.getTwitchProjection().then((projection) => {
           if (active) setTwitchProjection(projection);
         });
+        refreshOnboarding();
       }
       if (
         event.patches.some((patch) => patch.kind === 'connection' && patch.provider === 'supabase')
@@ -515,6 +528,7 @@ export function App() {
         void window.obscurPilot.getCloudAuth().then((projection) => {
           if (active) setCloudProjection(projection);
         });
+        refreshOnboarding();
       }
     });
     const unsubscribeTwitch = window.obscurPilot.onTwitchActivity((activity) => {
@@ -533,7 +547,7 @@ export function App() {
       unsubscribeTwitch();
       unsubscribeHandsFree();
     };
-  }, [announceConnection, enqueueActivity, refreshRuntime, speechQueue]);
+  }, [announceConnection, enqueueActivity, refreshOnboarding, refreshRuntime, speechQueue]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -661,7 +675,7 @@ export function App() {
               </div>
               <div className="topbar-status">
                 <span className="topbar-status-label">Production control board</span>
-                <Badge tone="ready">Stage 11.1 · Hands-free ready</Badge>
+                <Badge tone="ready">Stage 13 · Hardened runtime</Badge>
               </div>
             </header>
 
@@ -685,6 +699,23 @@ export function App() {
                   ))}
                 </div>
               </section>
+            ) : null}
+
+            {loadState.status === 'ready' && onboarding !== undefined && onboardingVisible ? (
+              <OnboardingPanel
+                projection={onboarding}
+                twitchPending={twitchActionPending}
+                onOpenAccount={() => {
+                  document.getElementById('cloud-access')?.scrollIntoView({ block: 'start' });
+                  document.querySelector<HTMLInputElement>('#cloud-email')?.focus();
+                }}
+                onConnectTwitch={connectTwitch}
+                onProjection={setOnboarding}
+                onDismiss={() => setOnboardingVisible(false)}
+                onObsProjectionChanged={() => {
+                  void window.obscurPilot.getObsSnapshot().then(setObsProjection);
+                }}
+              />
             ) : null}
 
             {loadState.status === 'ready' && restorationVisible && restoredVersion !== undefined ? (
@@ -762,7 +793,13 @@ export function App() {
                     ))}
                   </CardContent>
                 </Card>
-                <CloudAccess projection={cloudProjection} onProjection={setCloudProjection} />
+                <CloudAccess
+                  projection={cloudProjection}
+                  onProjection={(projection) => {
+                    setCloudProjection(projection);
+                    refreshOnboarding();
+                  }}
+                />
                 <Card className="span-full" id="twitch-integration">
                   <CardHeader>
                     <div className="flex items-center justify-between gap-4">
@@ -833,6 +870,10 @@ export function App() {
                     <h2 className="panel-title">Provider configuration</h2>
                   </CardHeader>
                   <CardContent className="configuration-grid">
+                    <ConfigurationStatus
+                      configured={loadState.bootstrap.configuration.deepgramConfigured}
+                      label="Deepgram voice"
+                    />
                     <ConfigurationStatus
                       configured={loadState.bootstrap.configuration.groqConfigured}
                       label="Groq"

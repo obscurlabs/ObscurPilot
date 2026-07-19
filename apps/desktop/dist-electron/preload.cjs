@@ -14565,6 +14565,9 @@ var IPC_CHANNELS = {
   agentInteractionChanged: "agent:interaction-changed:v1",
   obsGetSnapshot: "obs:get-snapshot:v1",
   obsReconnect: "obs:reconnect:v1",
+  onboardingGetProjection: "onboarding:get-projection:v1",
+  onboardingPairObs: "onboarding:pair-obs:v1",
+  onboardingClearObs: "onboarding:clear-obs:v1",
   cloudGetAuth: "cloud:get-auth:v1",
   cloudSignIn: "cloud:sign-in:v1",
   cloudSignUp: "cloud:sign-up:v1",
@@ -14638,6 +14641,7 @@ var BootstrapProjectionSchema = external_exports.object({
     node: external_exports.string().min(1)
   }).strict(),
   configuration: external_exports.object({
+    deepgramConfigured: external_exports.boolean(),
     groqConfigured: external_exports.boolean(),
     supabaseConfigured: external_exports.boolean(),
     twitchConfigured: external_exports.boolean()
@@ -14684,18 +14688,22 @@ var HandsFreePreferencesSchema = external_exports.object({
   enabled: external_exports.boolean(),
   wakePhrase: external_exports.string().trim().min(2).max(32),
   speechThreshold: external_exports.number().min(5e-3).max(0.25),
-  silenceReleaseMs: external_exports.number().int().min(250).max(3e3),
+  silenceReleaseMs: external_exports.number().int().min(350).max(3e3),
   conversationWindowMs: external_exports.number().int().min(15e3).max(9e5)
 }).strict();
 var HandsFreePhaseSchema = external_exports.enum([
   "disabled",
   "arming",
+  "connecting",
   "standby",
   "listening",
   "transcribing",
   "reasoning",
+  "tool_active",
   "awaiting_confirmation",
   "speaking",
+  "interrupted",
+  "recovering",
   "paused",
   "error"
 ]);
@@ -14706,6 +14714,16 @@ var HandsFreeProjectionSchema = external_exports.object({
   wakePhrase: external_exports.string().min(2).max(32),
   level: external_exports.number().min(0).max(1),
   sessionActive: external_exports.boolean(),
+  wakeWord: external_exports.object({
+    engine: external_exports.enum(["sherpa_onnx", "transcript"]),
+    ready: external_exports.boolean(),
+    reasonCode: external_exports.string().min(1).max(96)
+  }).strict().optional(),
+  provider: external_exports.enum(["deepgram", "groq_fallback", "native"]).optional(),
+  connected: external_exports.boolean().optional(),
+  currentTask: external_exports.string().trim().min(1).max(128).optional(),
+  lastTranscript: external_exports.string().trim().min(1).max(2e3).optional(),
+  lastLatencyMs: external_exports.number().int().nonnegative().max(12e4).optional(),
   sessionExpiresAt: external_exports.string().datetime({ offset: true }).optional(),
   speech: external_exports.object({ id: external_exports.string().uuid(), text: external_exports.string().trim().min(1).max(1e3) }).strict().optional()
 }).strict();
@@ -14788,6 +14806,31 @@ var ObsProjectionSchema = external_exports.object({
 }).strict();
 var GetObsSnapshotPayloadSchema = external_exports.object({}).strict();
 var ReconnectObsPayloadSchema = external_exports.object({}).strict();
+
+// ../../packages/contracts/dist/onboarding.js
+var OnboardingStepStatusSchema = external_exports.enum(["complete", "current", "waiting", "blocked"]);
+var OnboardingStepSchema = external_exports.object({
+  status: OnboardingStepStatusSchema,
+  ready: external_exports.boolean(),
+  reasonCode: external_exports.string().min(1).max(96)
+}).strict();
+var ObsPairingStepSchema = OnboardingStepSchema.extend({
+  endpoint: external_exports.string().url().regex(/^ws:\/\/(?:127\.0\.0\.1|localhost)(?::\d{1,5})?(?:\/[^?#]*)?$/u, "OBS pairing endpoint must be loopback WebSocket"),
+  passwordStored: external_exports.boolean(),
+  secureStorageAvailable: external_exports.boolean()
+}).strict();
+var OnboardingProjectionSchema = external_exports.object({
+  schemaVersion: external_exports.literal(1),
+  complete: external_exports.boolean(),
+  nextStep: external_exports.enum(["account", "twitch", "obs", "complete"]),
+  account: OnboardingStepSchema,
+  twitch: OnboardingStepSchema,
+  obs: ObsPairingStepSchema
+}).strict();
+var OnboardingEmptyPayloadSchema = external_exports.object({}).strict();
+var PairObsPayloadSchema = external_exports.object({
+  password: external_exports.string().max(256).optional()
+}).strict();
 
 // ../../packages/contracts/dist/cloud.js
 var CloudAuthPhaseSchema = external_exports.enum([
@@ -14995,6 +15038,45 @@ var LiveSessionPhaseSchema = external_exports.enum([
   "stopping",
   "stopped"
 ]);
+var LiveSessionPreflightCheckSchema = external_exports.object({
+  id: external_exports.enum([
+    "desktop.obs_process",
+    "obs.connection",
+    "obs.scene_collection",
+    "obs.pre_live_scene",
+    "obs.live_scene",
+    "obs.required_inputs",
+    "obs.output_idle",
+    "twitch.connection",
+    "twitch.category",
+    "twitch.scopes"
+  ]),
+  status: external_exports.enum(["passed", "failed", "warning"]),
+  critical: external_exports.boolean(),
+  reasonCode: external_exports.string().min(1).max(96),
+  checkedAt: external_exports.string().datetime({ offset: true })
+}).strict();
+var LiveSessionExecutionReceiptSchema = external_exports.object({
+  receiptId: external_exports.string().uuid(),
+  step: LiveSessionStepSchema,
+  status: external_exports.enum(["running", "verified", "failed", "compensated"]),
+  verification: external_exports.enum(["local", "obs", "twitch", "obs_and_twitch"]),
+  reasonCode: external_exports.string().min(1).max(96),
+  attempt: external_exports.number().int().positive().max(10),
+  startedAt: external_exports.string().datetime({ offset: true }),
+  completedAt: external_exports.string().datetime({ offset: true }).optional(),
+  durationMs: external_exports.number().int().nonnegative().max(3e5).optional()
+}).strict();
+var LiveSessionReliabilitySchema = external_exports.object({
+  operations: external_exports.number().int().nonnegative(),
+  verified: external_exports.number().int().nonnegative(),
+  failed: external_exports.number().int().nonnegative(),
+  recoveries: external_exports.number().int().nonnegative(),
+  duplicatesPrevented: external_exports.number().int().nonnegative(),
+  successRate: external_exports.number().min(0).max(1),
+  p50LatencyMs: external_exports.number().int().nonnegative(),
+  p95LatencyMs: external_exports.number().int().nonnegative()
+}).strict();
 var LiveSessionProjectionSchema = external_exports.object({
   phase: LiveSessionPhaseSchema,
   reasonCode: external_exports.string().min(1).max(96),
@@ -15005,7 +15087,10 @@ var LiveSessionProjectionSchema = external_exports.object({
   countdownRemainingSeconds: external_exports.number().int().nonnegative().optional(),
   obsStreamActive: external_exports.boolean(),
   twitchLive: external_exports.boolean(),
-  liveVerified: external_exports.boolean()
+  liveVerified: external_exports.boolean(),
+  preflightChecks: external_exports.array(LiveSessionPreflightCheckSchema).max(16).optional(),
+  executionReceipts: external_exports.array(LiveSessionExecutionReceiptSchema).max(32).optional(),
+  reliability: LiveSessionReliabilitySchema.optional()
 }).strict();
 var ChatMessageProjectionSchema = external_exports.object({
   messageId: external_exports.string().min(1).max(256),
@@ -15208,6 +15293,24 @@ function createRendererApi(ipc) {
       IPC_CHANNELS.obsReconnect,
       ReconnectObsPayloadSchema.parse({}),
       OperationAcceptedSchema
+    ),
+    getOnboarding: () => invoke(
+      ipc,
+      IPC_CHANNELS.onboardingGetProjection,
+      OnboardingEmptyPayloadSchema.parse({}),
+      OnboardingProjectionSchema
+    ),
+    pairObs: (payload) => invoke(
+      ipc,
+      IPC_CHANNELS.onboardingPairObs,
+      PairObsPayloadSchema.parse(payload),
+      OnboardingProjectionSchema
+    ),
+    clearObsPairing: () => invoke(
+      ipc,
+      IPC_CHANNELS.onboardingClearObs,
+      OnboardingEmptyPayloadSchema.parse({}),
+      OnboardingProjectionSchema
     ),
     getCloudAuth: () => invoke(
       ipc,

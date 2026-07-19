@@ -36,6 +36,10 @@
       "types": "./dist/obs.d.ts",
       "import": "./dist/obs.js"
     },
+    "./onboarding": {
+      "types": "./dist/onboarding.d.ts",
+      "import": "./dist/onboarding.js"
+    },
     "./renderer-api": {
       "types": "./dist/renderer-api.d.ts",
       "import": "./dist/renderer-api.js"

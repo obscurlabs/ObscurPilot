@@ -23,24 +23,31 @@ ObscurPilot is a cloud-hybrid, ultra-low-latency, voice-controlled live-producti
 17. [Stage 8 Groq transcription gate](docs/stage-8/README.md)
 18. [Stage 9 guarded reasoning and tool-ingestion gate](docs/stage-9/README.md)
 19. [Stage 10 production control board](docs/stage-10/README.md)
+20. [Stage 12 secure onboarding acceptance](docs/stage-12/acceptance-record.md)
+21. [Stage 13 reliability, security, and performance acceptance](docs/stage-13/acceptance-record.md)
 
 ## Delivery status
 
-| Stage                                             | Status                           | Evidence                                                |
-| ------------------------------------------------- | -------------------------------- | ------------------------------------------------------- |
-| Stage 0 - Architecture and measurable contracts   | Complete                         | [Acceptance record](docs/stage-0/acceptance-record.md)  |
-| Stage 1 - Monorepo and quality foundation         | Complete                         | [Acceptance record](docs/stage-1/acceptance-record.md)  |
-| Stage 2 - Secure desktop shell and IPC spine      | Complete                         | [Acceptance record](docs/stage-2/acceptance-record.md)  |
-| Stage 3 - Domain kernel and connection supervisor | Complete                         | [Acceptance record](docs/stage-3/acceptance-record.md)  |
-| Stage 4 - Push-to-talk and local audio pipeline   | Complete                         | [Acceptance record](docs/stage-4/acceptance-record.md)  |
-| Stage 5 - Authoritative local OBS bridge          | Implemented; live gate pending   | [Acceptance record](docs/stage-5/acceptance-record.md)  |
-| Stage 6 - Supabase identity and persistence       | Implemented; hosted gate pending | [Acceptance record](docs/stage-6/acceptance-record.md)  |
-| Stage 7 - Twitch OAuth, Helix, and EventSub       | Complete                         | [Acceptance record](docs/stage-7/acceptance-record.md)  |
-| Stage 8 - Groq transcription adapter              | Complete                         | [Acceptance record](docs/stage-8/acceptance-record.md)  |
-| Stage 9 - Reasoning and guarded tool ingestion    | Complete                         | [Acceptance record](docs/stage-9/acceptance-record.md)  |
-| Stage 10 - Production control board               | Complete                         | [Acceptance record](docs/stage-10/acceptance-record.md) |
+| Stage                                             | Status                                             | Evidence                                                             |
+| ------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------- |
+| Stage 0 - Architecture and measurable contracts   | Complete                                           | [Acceptance record](docs/stage-0/acceptance-record.md)               |
+| Stage 1 - Monorepo and quality foundation         | Complete                                           | [Acceptance record](docs/stage-1/acceptance-record.md)               |
+| Stage 2 - Secure desktop shell and IPC spine      | Complete                                           | [Acceptance record](docs/stage-2/acceptance-record.md)               |
+| Stage 3 - Domain kernel and connection supervisor | Complete                                           | [Acceptance record](docs/stage-3/acceptance-record.md)               |
+| Stage 4 - Push-to-talk and local audio pipeline   | Complete                                           | [Acceptance record](docs/stage-4/acceptance-record.md)               |
+| Stage 5 - Authoritative local OBS bridge          | Implemented; live gate pending                     | [Acceptance record](docs/stage-5/acceptance-record.md)               |
+| Stage 6 - Supabase identity and persistence       | Implemented; hosted gate pending                   | [Acceptance record](docs/stage-6/acceptance-record.md)               |
+| Stage 7 - Twitch OAuth, Helix, and EventSub       | Complete                                           | [Acceptance record](docs/stage-7/acceptance-record.md)               |
+| Stage 8 - Groq transcription adapter              | Complete                                           | [Acceptance record](docs/stage-8/acceptance-record.md)               |
+| Stage 9 - Reasoning and guarded tool ingestion    | Complete                                           | [Acceptance record](docs/stage-9/acceptance-record.md)               |
+| Stage 10 - Production control board               | Complete                                           | [Acceptance record](docs/stage-10/acceptance-record.md)              |
+| Stage 11 - OBS/Twitch live orchestration          | Implemented; live gate pending                     | [Acceptance record](docs/stage-11/acceptance-record.md)              |
+| Stage 11.2–11.6 - Realtime voice agent            | Automated gates complete                           | [Acceptance record](docs/stage-11/11-2-to-11-6-acceptance-record.md) |
+| Stage 11.7–11.9 - Verified local execution        | Automated gates complete; live gate pending        | [Acceptance record](docs/stage-11/11-7-to-11-9-acceptance-record.md) |
+| Stage 12 - Secure onboarding and provider pairing | Automated gates complete; live gate pending        | [Acceptance record](docs/stage-12/acceptance-record.md)              |
+| Stage 13 - Reliability, security, and performance | Automated gates complete; 8-hour live gate pending | [Acceptance record](docs/stage-13/acceptance-record.md)              |
 
-The next gate is Stage 11 complete OBS/Twitch live-session orchestration, chat intelligence, and creator-approved moderation. Stage 11 is the first complete local rehearsal gate for a request such as “prepare my Sekiro stream and go live.” A controlled public Twitch live test follows Stage 13 hardening; Stage 15 is the production acceptance baseline.
+The next gate is the combined creator-observed Stage 11.7–13 microphone, Twitch OAuth, OBS pairing, dedicated broadcast, and eight-hour reference soak. Automated wake, verified execution, secure onboarding, hostile-input, provider-chaos, performance, supply-chain, packaged startup, and short-soak gates are complete. Stage 14 remains the packaging and release-operations gate; Stage 15 remains the production acceptance baseline.
 
 ## Fixed technology baseline
 
@@ -49,6 +56,7 @@ The next gate is Stage 11 complete OBS/Twitch live-session orchestration, chat i
 - Groq `whisper-large-v3-turbo` for push-to-talk transcription
 - Groq `openai/gpt-oss-120b` or `qwen/qwen3.6-27b` for tool-oriented reasoning
 - Web Speech API for local spoken feedback
+- Deepgram Voice Agent WebSocket for continuous speech, streamed voice, turn detection, and client-side function calls; Groq remains the push-to-talk and degraded-mode fallback
 - `obs-websocket-js` for local OBS JSON-RPC on port 4455
 - Twurple API and EventSub WebSocket packages for Twitch
 - Supabase Auth, PostgreSQL, Realtime, and Row Level Security

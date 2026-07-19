@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { HandsFreeConversation } from '../../apps/desktop/electron/hands-free-conversation';
+import {
+  failureSpeech,
+  HandsFreeConversation,
+} from '../../apps/desktop/electron/hands-free-conversation';
 
 const preferences = {
   enabled: true,
@@ -69,7 +72,11 @@ describe('hands-free conversation boundary', () => {
   it('clears a prior error from the overlay when a later command completes', () => {
     const controller = new HandsFreeConversation(preferences, () => undefined);
     controller.syncAgent({ phase: 'error', reasonCode: 'RATE_LIMITED', elapsedMs: 100 });
-    expect(controller.snapshot()).toMatchObject({ phase: 'error', reasonCode: 'RATE_LIMITED' });
+    expect(controller.snapshot()).toMatchObject({
+      phase: 'speaking',
+      reasonCode: 'COMMAND_FAILED',
+      speech: { text: expect.stringContaining('rate limited') },
+    });
 
     controller.syncAgent({
       phase: 'completed',
@@ -79,6 +86,51 @@ describe('hands-free conversation boundary', () => {
     expect(controller.snapshot()).toMatchObject({
       phase: 'standby',
       reasonCode: 'COMMAND_COMPLETE_READY',
+    });
+  });
+
+  it('turns opaque execution failures into exact actionable voice feedback', () => {
+    expect(failureSpeech('OBS_NOT_READY')).toContain('OBS is not connected');
+    expect(failureSpeech('ORCHESTRATION_FAILED')).toContain('orchestration failed');
+  });
+
+  it('projects realtime provider, task, transcript, and latency state', () => {
+    const controller = new HandsFreeConversation(preferences, () => undefined);
+    controller.realtimePhase('tool_active', 'PRODUCTION_TOOL_RUNNING', {
+      provider: 'deepgram',
+      connected: true,
+      currentTask: 'live_session_auto_prepare_v1',
+      lastTranscript: 'Set up Sekiro and start streaming now',
+      lastLatencyMs: 642,
+    });
+    expect(controller.snapshot()).toMatchObject({
+      phase: 'tool_active',
+      provider: 'deepgram',
+      connected: true,
+      currentTask: 'live_session_auto_prepare_v1',
+      lastLatencyMs: 642,
+    });
+    controller.realtimePhase('standby', 'FOLLOW_UP_LISTENING', {
+      provider: 'deepgram',
+      connected: true,
+    });
+    expect(controller.snapshot()).not.toHaveProperty('currentTask');
+  });
+
+  it('does not let provider readiness activate a disabled microphone preference', () => {
+    const controller = new HandsFreeConversation(
+      { ...preferences, enabled: false },
+      () => undefined,
+    );
+    controller.realtimePhase('standby', 'DEEPGRAM_REALTIME_READY', {
+      provider: 'deepgram',
+      connected: true,
+    });
+    expect(controller.snapshot()).toMatchObject({
+      enabled: false,
+      phase: 'disabled',
+      reasonCode: 'HANDS_FREE_DISABLED',
+      sessionActive: false,
     });
   });
 });

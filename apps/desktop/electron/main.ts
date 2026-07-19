@@ -25,6 +25,7 @@ import {
 import {
   createObsProductionTools,
   ObsBridge,
+  ObsBridgeError,
   type ObsCommandRequest,
 } from '@obscurpilot/adapters-obs/boundary';
 import {
@@ -36,6 +37,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  globalShortcut,
   ipcMain,
   safeStorage,
   session,
@@ -51,6 +53,7 @@ import {
   parseEnvironment,
 } from './environment.js';
 import { PublicFault, registerSecureHandler } from './ipc-router.js';
+import { safeErrorMessage, secureLogError } from './redaction.js';
 import { LifecycleScope } from './lifecycle.js';
 import {
   installPermissionDenial,
@@ -63,7 +66,8 @@ import {
   createAudioCaptureWindow,
   createMainWindow,
   createMainWindowShell,
-  createPilotOverlayWindow,
+  createPilotOverlayWindowShell,
+  loadPilotOverlayWindow,
   applyPilotOverlayPreferences,
   loadMainWindow,
 } from './window-manager.js';
@@ -126,9 +130,22 @@ import {
 } from '@obscurpilot/domain/live-session-coordinator';
 import { BoundedChatIntelligence, ModerationGuard } from '@obscurpilot/domain/chat-intelligence';
 import { ObsProcessSupervisor } from './obs-process-supervisor.js';
+import { WindowsDesktopSupervisor } from './windows-desktop-supervisor.js';
+import { WakeWordAudioGate } from './sherpa-wake-word.js';
+import { HandsFreeTurnFallback } from './hands-free-turn-fallback.js';
+import { SherpaWakeWordWorker } from './wake-word-worker-client.js';
+import { DeepgramVoiceAgent, type RealtimeVoicePhase } from './deepgram-voice-agent.js';
+import {
+  OnboardingEmptyPayloadSchema,
+  OnboardingProjectionSchema,
+  PairObsPayloadSchema,
+} from '@obscurpilot/contracts/onboarding';
+import { projectOnboarding } from './onboarding-service.js';
+import { ObsPairingSecurityError, ObsPairingService } from './obs-pairing-service.js';
 
 const lifecycle = new LifecycleScope();
 const stateService = new MainStateService();
+const SHUTDOWN_DEADLINE_MS = 5_000;
 let shutdownStarted = false;
 
 type Stage11TwitchToolInput = {
@@ -155,6 +172,7 @@ const LOCAL_VOICE_TOOL_GRANTS: readonly ToolGrant[] = (
     ['obs.stop_stream', ['obs:stream:write']],
     ['obs.start_record', ['obs:record:write']],
     ['obs.stop_record', ['obs:record:write']],
+    ['obs.desktop.open', ['obs:read']],
     ['twitch.read_connection', ['twitch:read']],
     ['live_session.prepare_profile', ['session:prepare']],
     ['live_session.auto_prepare', ['session:prepare']],
@@ -180,6 +198,15 @@ function stage11Record(input: unknown): Record<string, unknown> {
     throw new Error('Tool input must be an object');
   }
   return input as Record<string, unknown>;
+}
+
+function twitchMetadataMatches(actual: TwitchMetadata, expected: TwitchMetadata): boolean {
+  return (
+    actual.title === expected.title &&
+    actual.categoryId === expected.categoryId &&
+    actual.language === expected.language &&
+    [...actual.tags].sort().join('\u0000') === [...expected.tags].sort().join('\u0000')
+  );
 }
 
 function stage11String(record: Record<string, unknown>, key: string, maximum = 500): string {
@@ -245,6 +272,7 @@ async function startApplication(): Promise<void> {
           node: process.versions.node,
         },
         configuration: {
+          deepgramConfigured: environment.DEEPGRAM_API_KEY !== undefined,
           groqConfigured: environment.GROQ_API_KEY !== undefined,
           supabaseConfigured:
             environment.SUPABASE_URL !== undefined && environment.SUPABASE_ANON_KEY !== undefined,
@@ -283,6 +311,7 @@ async function startApplication(): Promise<void> {
   const settings = new SecureSettingsStore(resolve(app.getPath('userData'), 'secure-settings.enc'));
   const persistedSettings = await settings.load();
   const audioServiceRef: { current?: PttAudioService } = {};
+  const deepgramAgentRef: { current?: DeepgramVoiceAgent } = {};
   let audioSuppressedForSpeech = false;
   const handsFreeConversation = new HandsFreeConversation(
     persistedSettings.handsFree,
@@ -298,18 +327,54 @@ async function startApplication(): Promise<void> {
           window.webContents.send(IPC_CHANNELS.handsFreeChanged, envelope);
         }
       }
-      const shouldSuppress = projection.phase === 'speaking';
+      // Only Web Speech feedback needs microphone suppression. Deepgram audio
+      // has its own barge-in path and never carries a local speech event.
+      const shouldSuppress = projection.phase === 'speaking' && projection.speech !== undefined;
       if (shouldSuppress !== audioSuppressedForSpeech) {
         audioSuppressedForSpeech = shouldSuppress;
         audioServiceRef.current?.setSuppressed(shouldSuppress);
       }
     },
   );
-  const pilotOverlayWindow = await createPilotOverlayWindow(
+  const pilotOverlayWindow = createPilotOverlayWindowShell(
     isDevelopment,
-    developmentServerUrl,
     persistedSettings.pilotOverlay,
   );
+  const defaultWakeModelDirectory = app.isPackaged
+    ? resolve(process.resourcesPath, 'wake-word')
+    : resolve(app.getAppPath(), 'resources', 'wake-word');
+  let wakeDetector: SherpaWakeWordWorker | undefined;
+  if (environment.WAKE_WORD_ENGINE === 'sherpa_onnx') {
+    try {
+      wakeDetector = new SherpaWakeWordWorker({
+        modelDirectory: environment.WAKE_WORD_MODEL_DIR ?? defaultWakeModelDirectory,
+        score: environment.WAKE_WORD_SCORE,
+        threshold: environment.WAKE_WORD_THRESHOLD,
+        cooldownMs: environment.WAKE_WORD_COOLDOWN_MS,
+      });
+      await wakeDetector.ready();
+      handsFreeConversation.setWakeWordStatus({
+        engine: 'sherpa_onnx',
+        ready: true,
+        reasonCode: 'LOCAL_WAKE_WORD_READY',
+      });
+    } catch {
+      await wakeDetector?.dispose();
+      wakeDetector = undefined;
+      handsFreeConversation.setWakeWordStatus({
+        engine: 'transcript',
+        ready: true,
+        reasonCode: 'LOCAL_MODEL_UNAVAILABLE_TRANSCRIPT_FALLBACK',
+      });
+    }
+  } else {
+    handsFreeConversation.setWakeWordStatus({
+      engine: 'transcript',
+      ready: true,
+      reasonCode: 'TRANSCRIPT_WAKE_WORD_READY',
+    });
+  }
+  lifecycle.add(() => wakeDetector?.dispose());
   lifecycle.add(() => {
     if (!pilotOverlayWindow.isDestroyed()) pilotOverlayWindow.destroy();
   });
@@ -365,6 +430,22 @@ async function startApplication(): Promise<void> {
     });
     lifecycle.add(() => voiceOrchestrator.dispose());
   }
+  const realtimeWakeGate = new WakeWordAudioGate(
+    wakeDetector,
+    () => handsFreeConversation.isSessionActive(),
+    () => handsFreeConversation.activateWake(),
+    (samples) => deepgramAgentRef.current?.sendAudio(samples),
+  );
+  const realtimeTurnFallback = new HandsFreeTurnFallback({
+    onFallback: (clip) => {
+      if (voiceOrchestrator === undefined) {
+        clip.bytes.fill(0);
+        return;
+      }
+      return voiceOrchestrator.processClip(clip, 'hands_free');
+    },
+  });
+  lifecycle.add(() => realtimeTurnFallback.dispose());
   const activeAudioService = new PttAudioService(
     ipcMain,
     captureWindow,
@@ -376,19 +457,37 @@ async function startApplication(): Promise<void> {
         }
       }
     },
-    (clip, source) => voiceOrchestrator?.processClip(clip, source),
+    (clip, source) => {
+      if (source === 'hands_free' && deepgramAgentRef.current?.isReady() === true) {
+        if (!handsFreeConversation.isSessionActive() && wakeDetector !== undefined) {
+          clip.bytes.fill(0);
+          return;
+        }
+        realtimeTurnFallback.enqueue(clip);
+        return;
+      }
+      return voiceOrchestrator?.processClip(clip, source);
+    },
     (phase, reasonCode, level) => handsFreeConversation.audioPhase(phase, reasonCode, level),
+    (samples) => realtimeWakeGate.accept(samples),
+    process.env.OBSCURPILOT_E2E !== '1',
   );
   audioServiceRef.current = activeAudioService;
   await activeAudioService.start();
   lifecycle.add(() => activeAudioService.dispose());
 
+  const obsWebSocketPassword =
+    persistedSettings.obsWebSocketPassword ?? environment.OBS_WEBSOCKET_PASSWORD;
   const obsBridge = new ObsBridge({
     url: environment.OBS_WEBSOCKET_URL,
-    ...(environment.OBS_WEBSOCKET_PASSWORD === undefined
-      ? {}
-      : { password: environment.OBS_WEBSOCKET_PASSWORD }),
+    ...(obsWebSocketPassword === undefined ? {} : { password: obsWebSocketPassword }),
     onConnection: (projection) => stateService.setConnection(projection),
+  });
+  const obsPairing = new ObsPairingService({
+    getStoredPassword: () => settings.snapshot().obsWebSocketPassword,
+    encryptionAvailable: () => settings.encryptionAvailable(),
+    configure: (password) => obsBridge.reconfigurePassword(password),
+    persist: (password) => settings.update({ obsWebSocketPassword: password }),
   });
   lifecycle.add(() => obsBridge.dispose());
   const obsProcessSupervisor = new ObsProcessSupervisor({
@@ -398,6 +497,7 @@ async function startApplication(): Promise<void> {
     getSnapshot: () => obsBridge.snapshot(),
     reconnect: () => obsBridge.reconnect(),
   });
+  const windowsDesktop = new WindowsDesktopSupervisor();
 
   const cloudBridge =
     environment.SUPABASE_URL !== undefined && environment.SUPABASE_ANON_KEY !== undefined
@@ -679,6 +779,10 @@ async function startApplication(): Promise<void> {
       if (twitchBridge === undefined) throw new Error('TWITCH_NOT_CONFIGURED');
       await twitchBridge.restoreMetadata(metadata);
     },
+    readMetadata: () =>
+      twitchBridge === undefined
+        ? Promise.reject(new Error('TWITCH_NOT_CONFIGURED'))
+        : twitchBridge.readMetadata(),
     isLive: () =>
       twitchBridge === undefined
         ? Promise.reject(new Error('TWITCH_NOT_CONFIGURED'))
@@ -688,6 +792,7 @@ async function startApplication(): Promise<void> {
   const liveSession = new LiveSessionCoordinator({
     obs: obsSessionPort,
     twitch: twitchSessionPort,
+    desktop: windowsDesktop,
     onProjection: (projection) => {
       const envelope = LiveSessionChangedEventSchema.parse({
         protocolVersion: 1,
@@ -710,25 +815,33 @@ async function startApplication(): Promise<void> {
         if (announcement !== undefined && twitchBridge !== undefined) {
           void twitchBridge.sendMessage(announcement).catch(() => undefined);
         }
-        handsFreeConversation.speak('OBS and Twitch are verified live.', 'LIVE_SESSION_VERIFIED');
-      }
-      if (projection.phase === 'failed') {
-        handsFreeConversation.speak(
-          'I could not start the stream. The reason is ' +
-            projection.reasonCode.replaceAll('_', ' ').toLocaleLowerCase('en-US') +
-            '.',
-          'LIVE_SESSION_FAILED',
-        );
-      }
-      if (projection.phase === 'stopped') {
-        handsFreeConversation.speak(
-          'The production session is stopped and the output is offline.',
-          'LIVE_SESSION_STOPPED',
-        );
       }
     },
   });
+  const emergencyAccelerator = 'CommandOrControl+Shift+F12';
+  if (globalShortcut.register(emergencyAccelerator, () => void liveSession.stop(true))) {
+    lifecycle.add(() => globalShortcut.unregister(emergencyAccelerator));
+  }
   lifecycle.add(() => liveSession.dispose());
+  const onboardingProjection = () => {
+    const snapshot = stateService.snapshot();
+    const cloud = cloudBridge?.snapshot();
+    const twitch = twitchBridge?.snapshot();
+    return projectOnboarding({
+      endpoint: environment.OBS_WEBSOCKET_URL,
+      secureStorageAvailable: settings.encryptionAvailable(),
+      passwordStored: settings.snapshot().obsWebSocketPassword !== undefined,
+      accountConfigured: cloud?.configured === true,
+      accountReady: cloud?.phase === 'authenticated',
+      accountReasonCode: cloud?.reasonCode ?? 'NOT_CONFIGURED',
+      twitchConfigured: twitch?.configured === true,
+      twitchReady: twitch?.phase === 'connected',
+      twitchReasonCode: twitch?.reasonCode ?? 'NOT_CONFIGURED',
+      obsPhase: snapshot.connections.obs.phase,
+      obsReady: snapshot.connections.obs.phase === 'ready' && obsBridge.snapshot() !== undefined,
+      obsReasonCode: snapshot.connections.obs.reasonCode,
+    });
+  };
   const moderationGuard = new ModerationGuard(new Set());
 
   if (voiceOrchestrator !== undefined && groqClient !== undefined) {
@@ -741,7 +854,6 @@ async function startApplication(): Promise<void> {
           readonly language: string;
           readonly announcementText?: string;
           readonly countdownSeconds: number;
-          readonly startNow: boolean;
           readonly mode: 'dry_run' | 'live';
         }
       | undefined;
@@ -752,6 +864,42 @@ async function startApplication(): Promise<void> {
     for (const tool of createObsProductionTools(obsBridge, { getGrants })) {
       registry.register(tool);
     }
+    registry.register({
+      name: 'obs.desktop.open',
+      version: 1,
+      risk: 'observe',
+      modelName: 'obs_desktop_open_v1',
+      description:
+        'Launch or focus OBS Studio and wait for its WebSocket state to synchronize. This never starts streaming or recording.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+      parse: (input) => {
+        if (typeof input !== 'object' || input === null || Object.keys(input).length !== 0) {
+          throw new Error('obs.desktop.open accepts an empty object');
+        }
+        return {};
+      },
+      authorize: async (context) =>
+        authorizeTool(getGrants(), {
+          now: Date.now(),
+          toolName: 'obs.desktop.open',
+          requiredScope: 'obs:read',
+          risk: 'observe',
+          confirmed: context.confirmed === true,
+        }),
+      execute: async () => {
+        const snapshot = await obsProcessSupervisor.ensureReady();
+        const focused = await windowsDesktop.focusObs();
+        const inspection = await windowsDesktop.inspectObs();
+        return {
+          ready: true,
+          running: inspection.running,
+          windowVisible: inspection.windowVisible,
+          focused,
+          streamActive: snapshot.streamActive,
+          recordActive: snapshot.recordActive,
+        };
+      },
+    });
     registry.register({
       name: 'twitch.read_connection',
       version: 1,
@@ -789,7 +937,7 @@ async function startApplication(): Promise<void> {
       risk: 'reversible',
       modelName: 'live_session_auto_prepare_v1',
       description:
-        'Resolve a Twitch category, provision OBS resources, save title/tags/language metadata, optionally queue a live chat announcement, and prepare an immutable plan. When startNow is true in live mode, immediately execute the prepared plan. A zero countdown starts on the live scene without delay.',
+        'Resolve a Twitch category, provision OBS resources, apply and verify Twitch metadata, select the OBS pre-live scene, optionally queue a live chat announcement, and prepare an immutable plan. This never starts streaming or recording.',
       parameters: {
         type: 'object',
         properties: {
@@ -803,7 +951,6 @@ async function startApplication(): Promise<void> {
           language: { type: 'string', pattern: '^[a-z]{2}$' },
           announcementText: { type: 'string', minLength: 1, maxLength: 500 },
           countdownSeconds: { type: 'integer', minimum: 0, maximum: 3600 },
-          startNow: { type: 'boolean' },
           mode: { type: 'string', enum: ['dry_run', 'live'] },
         },
         required: ['categoryQuery', 'mode'],
@@ -821,7 +968,6 @@ async function startApplication(): Promise<void> {
                 'language',
                 'announcementText',
                 'countdownSeconds',
-                'startNow',
                 'mode',
               ].includes(key),
           )
@@ -839,9 +985,6 @@ async function startApplication(): Promise<void> {
         }
         if (!['dry_run', 'live'].includes(String(value.mode))) {
           throw new Error('LIVE_SESSION_MODE_REQUIRED');
-        }
-        if (value.startNow === true && value.mode !== 'live') {
-          throw new Error('START_NOW_REQUIRES_LIVE_MODE');
         }
         return {
           categoryQuery: stage11String(value, 'categoryQuery', 120),
@@ -863,7 +1006,6 @@ async function startApplication(): Promise<void> {
             ? { announcementText: value.announcementText.trim().slice(0, 500) }
             : {}),
           countdownSeconds,
-          startNow: value.startNow === true,
           mode: value.mode as 'dry_run' | 'live',
         };
       },
@@ -945,6 +1087,25 @@ async function startApplication(): Promise<void> {
           ].slice(-20),
           activeLiveSessionProfileId: profile.profileId,
         });
+        if (input.mode === 'live') {
+          await twitchSessionPort.updateMetadata(
+            profile.twitch,
+            context.commandId ?? randomUUID(),
+            context.signal,
+          );
+          const appliedMetadata = await twitchSessionPort.readMetadata();
+          if (!twitchMetadataMatches(appliedMetadata, profile.twitch)) {
+            throw new Error('TWITCH_METADATA_VERIFICATION_FAILED');
+          }
+          await obsSessionPort.setProgramScene(
+            profile.obs.preLiveSceneName,
+            context.commandId ?? randomUUID(),
+            context.signal,
+          );
+          if (obsBridge.snapshot()?.currentProgramSceneName !== profile.obs.preLiveSceneName) {
+            throw new Error('OBS_PRELIVE_SCENE_VERIFICATION_FAILED');
+          }
+        }
         const projection = await liveSession.prepare(profile, input.mode);
         if (
           input.mode === 'live' &&
@@ -954,21 +1115,16 @@ async function startApplication(): Promise<void> {
           pendingLiveAnnouncements.set(projection.plan.planId, input.announcementText);
         }
         pendingVoicePreparation = undefined;
-        const startAccepted =
-          input.startNow &&
-          projection.phase === 'awaiting_confirmation' &&
-          projection.plan !== undefined;
-        const started = startAccepted
-          ? liveSession.decide(projection.plan!.planId, 'approve')
-          : projection;
         return {
-          phase: started.phase,
-          reasonCode: started.reasonCode,
+          phase: projection.phase,
+          reasonCode: projection.reasonCode,
           profileName: profile.name,
           categoryName: category.name,
           countdownSeconds: profile.obs.countdownSeconds,
-          startAccepted,
+          prepared: projection.phase === 'awaiting_confirmation',
+          outputStarted: false,
           planId: projection.plan?.planId,
+          nextInstruction: 'Say start streaming when you are ready to go live.',
         };
       },
     });
@@ -1058,13 +1214,29 @@ async function startApplication(): Promise<void> {
           risk: 'confirm',
           confirmed: context.confirmed === true,
         }),
-      execute: async () => {
+      execute: async (context) => {
         const projection = liveSession.snapshot();
         if (projection.phase !== 'awaiting_confirmation' || projection.plan === undefined) {
           throw new Error('NO_PREPARED_PLAN');
         }
         const next = liveSession.decide(projection.plan.planId, 'approve');
-        return { phase: next.phase, reasonCode: next.reasonCode, planId: projection.plan.planId };
+        const deadline = Date.now() + 120_000;
+        let final = next;
+        while (!['live', 'failed', 'stopped'].includes(final.phase) && Date.now() < deadline) {
+          if (context.signal.aborted) throw context.signal.reason;
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+          final = liveSession.snapshot();
+        }
+        const startAccepted = final.phase === 'live' && final.liveVerified === true;
+        return {
+          phase: final.phase,
+          reasonCode: final.reasonCode,
+          planId: projection.plan.planId,
+          startAccepted,
+          liveVerified: final.liveVerified,
+          obsStreamActive: final.obsStreamActive,
+          twitchLive: final.twitchLive,
+        };
       },
     });
     registry.register({
@@ -1089,8 +1261,23 @@ async function startApplication(): Promise<void> {
           confirmed: context.confirmed === true,
         }),
       execute: async () => {
+        await obsProcessSupervisor.ensureReady();
         const projection = await liveSession.stop(false);
-        return { phase: projection.phase, reasonCode: projection.reasonCode };
+        const obs = obsBridge.snapshot();
+        const twitchLive = await twitchSessionPort.isLive().catch(() => undefined);
+        const verifiedOffline =
+          projection.phase === 'stopped' &&
+          obs?.streamActive === false &&
+          obs.recordActive === false &&
+          twitchLive === false;
+        return {
+          phase: projection.phase,
+          reasonCode: projection.reasonCode,
+          verifiedOffline,
+          obsStreamActive: obs?.streamActive,
+          obsRecordActive: obs?.recordActive,
+          twitchLive,
+        };
       },
     });
     const twitchMutationTools = [
@@ -1302,6 +1489,144 @@ async function startApplication(): Promise<void> {
         },
       });
     }
+    if (
+      environment.VOICE_AGENT_PROVIDER === 'deepgram' &&
+      environment.DEEPGRAM_API_KEY !== undefined
+    ) {
+      const phaseMap: Record<
+        RealtimeVoicePhase,
+        | 'connecting'
+        | 'standby'
+        | 'listening'
+        | 'reasoning'
+        | 'tool_active'
+        | 'speaking'
+        | 'interrupted'
+        | 'recovering'
+        | 'error'
+      > = {
+        connecting: 'connecting',
+        ready: 'standby',
+        listening: 'listening',
+        thinking: 'reasoning',
+        tool_active: 'tool_active',
+        speaking: 'speaking',
+        interrupted: 'interrupted',
+        recovering: 'recovering',
+        error: 'error',
+      };
+      const realtimeAgent = new DeepgramVoiceAgent({
+        apiKey: environment.DEEPGRAM_API_KEY,
+        endpoint: environment.DEEPGRAM_AGENT_URL,
+        listenModel: environment.DEEPGRAM_LISTEN_MODEL,
+        thinkModel: environment.DEEPGRAM_THINK_MODEL,
+        voiceModel: environment.DEEPGRAM_VOICE_MODEL,
+        tools: registry.modelDescriptors(),
+        invokeTool: async (call) => {
+          const descriptor = registry.descriptorForModelName(call.name);
+          const obs = obsBridge.snapshot();
+          const startedAt = Date.now();
+          try {
+            const result = await registry.invoke(
+              descriptor.name,
+              descriptor.version,
+              call.arguments,
+              {
+                correlationId: call.correlationId,
+                signal: call.signal,
+                commandId: call.id,
+                confirmed: true,
+                ...(obs === undefined
+                  ? {}
+                  : {
+                      expectedObsSnapshotVersion: obs.snapshotVersion,
+                      expectedObsGeneration: obs.generation,
+                    }),
+              },
+            );
+            void cloudBridge
+              ?.recordCommandAudit({
+                correlationId: call.correlationId,
+                toolName: descriptor.name + '@' + descriptor.version,
+                outcome: 'allowed',
+                reasonCode: 'DEEPGRAM_TOOL_SUCCEEDED',
+                durationMs: Date.now() - startedAt,
+                metadata: { provider: 'deepgram', functionCallId: call.id },
+              })
+              .catch(() => undefined);
+            return result;
+          } catch (error) {
+            void cloudBridge
+              ?.recordCommandAudit({
+                correlationId: call.correlationId,
+                toolName: descriptor.name + '@' + descriptor.version,
+                outcome: 'failed',
+                reasonCode: 'DEEPGRAM_TOOL_FAILED',
+                durationMs: Date.now() - startedAt,
+                metadata: { provider: 'deepgram', functionCallId: call.id },
+              })
+              .catch(() => undefined);
+            throw error;
+          }
+        },
+        onPhase: (phase, reasonCode, detail) => {
+          if (phase === 'tool_active') realtimeTurnFallback.commitRealtimeTurn();
+          const metadata = {
+            provider: 'deepgram' as const,
+            connected: deepgramAgentRef.current?.isReady() === true,
+            ...(phase === 'tool_active' && detail !== undefined
+              ? { currentTask: detail.slice(0, 128) }
+              : {}),
+            ...((phase === 'thinking' && reasonCode === 'TRANSCRIPT_RECEIVED') ||
+            phase === 'speaking'
+              ? detail === undefined
+                ? {}
+                : { lastTranscript: detail.slice(0, 2_000) }
+              : {}),
+          };
+          handsFreeConversation.realtimePhase(phaseMap[phase], reasonCode, metadata);
+        },
+        onReadyChanged: (ready) => {
+          activeAudioService.setRealtimeStreaming(ready);
+          if (!ready) activeAudioService.stopAgentAudio();
+        },
+        onAudio: (bytes, sampleRate) => {
+          if (realtimeTurnFallback.acceptsRealtimeOutput()) {
+            activeAudioService.playAgentAudio(bytes, sampleRate);
+          }
+        },
+        onAudioDone: () => activeAudioService.finishAgentAudio(),
+        onBargeIn: () => activeAudioService.stopAgentAudio(),
+        onConversation: (role) => {
+          if (role === 'user') realtimeTurnFallback.beginRealtimeTurn();
+          else realtimeTurnFallback.commitRealtimeTurn();
+        },
+        onLatency: (lastLatencyMs) => {
+          const current = handsFreeConversation.snapshot();
+          const phase =
+            current.phase === 'disabled' ||
+            current.phase === 'arming' ||
+            current.phase === 'transcribing' ||
+            current.phase === 'awaiting_confirmation' ||
+            current.phase === 'paused'
+              ? 'standby'
+              : current.phase;
+          handsFreeConversation.realtimePhase(phase, current.reasonCode, {
+            provider: 'deepgram',
+            connected: true,
+            lastLatencyMs,
+          });
+        },
+      });
+      deepgramAgentRef.current = realtimeAgent;
+      realtimeAgent.start();
+      lifecycle.add(() => realtimeAgent.dispose());
+    } else if (environment.VOICE_AGENT_PROVIDER === 'deepgram') {
+      handsFreeConversation.realtimePhase('recovering', 'DEEPGRAM_NOT_CONFIGURED', {
+        provider: 'groq_fallback',
+        connected: false,
+      });
+    }
     const reasoning = new GuardedReasoningOrchestrator({
       reasoning: new GroqReasoningAdapter({
         primaryModel: environment.GROQ_REASONING_MODEL,
@@ -1442,7 +1767,10 @@ async function startApplication(): Promise<void> {
         model: outcome.model,
       });
       handsFreeConversation.speak(
-        outcome.response || 'The requested production task is complete.',
+        outcome.response ||
+          (outcome.toolCalls > 0
+            ? 'I finished the requested production action and verified its tool response.'
+            : 'I did not find a production action to apply from that request.'),
         'COMMAND_RESPONSE',
       );
     });
@@ -1746,6 +2074,59 @@ async function startApplication(): Promise<void> {
   lifecycle.add(
     registerSecureHandler({
       ipcMain,
+      channel: IPC_CHANNELS.onboardingGetProjection,
+      payloadSchema: OnboardingEmptyPayloadSchema,
+      resultSchema: OnboardingProjectionSchema,
+      isTrustedSender: trustedSender,
+      handler: onboardingProjection,
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.onboardingPairObs,
+      payloadSchema: PairObsPayloadSchema,
+      resultSchema: OnboardingProjectionSchema,
+      isTrustedSender: trustedSender,
+      handler: async ({ payload }) => {
+        const candidate = payload.password === '' ? undefined : payload.password;
+        try {
+          await obsPairing.pair(candidate);
+          return onboardingProjection();
+        } catch (error: unknown) {
+          if (error instanceof ObsPairingSecurityError)
+            throw new PublicFault(
+              'PRECONDITION_FAILED',
+              'Operating-system encryption is unavailable; the OBS password was not stored',
+            );
+          if (error instanceof ObsBridgeError && error.code === 'AUTH_REQUIRED') {
+            throw new PublicFault('AUTH_REQUIRED', 'OBS rejected that WebSocket password');
+          }
+          throw new PublicFault(
+            'UPSTREAM_UNAVAILABLE',
+            'OBS was not reachable on local port 4455',
+            true,
+          );
+        }
+      },
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.onboardingClearObs,
+      payloadSchema: OnboardingEmptyPayloadSchema,
+      resultSchema: OnboardingProjectionSchema,
+      isTrustedSender: trustedSender,
+      handler: async () => {
+        await obsPairing.clear();
+        return onboardingProjection();
+      },
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
       channel: IPC_CHANNELS.cloudGetAuth,
       payloadSchema: CloudGetAuthPayloadSchema,
       resultSchema: CloudAuthProjectionSchema,
@@ -1923,9 +2304,9 @@ async function startApplication(): Promise<void> {
   };
   const consumeProtocolCallback = (value: string): void => {
     void handleProtocolCallback(value).catch((error: unknown) => {
-      console.error(
+      secureLogError(
         'ObscurPilot protocol callback failed:',
-        error instanceof Error ? error.message : 'Unknown callback error',
+        safeErrorMessage(error, 'Unknown callback error'),
       );
       stateService.setConnection({
         provider: 'twitch',
@@ -1938,6 +2319,14 @@ async function startApplication(): Promise<void> {
     });
   };
 
+  // The overlay requests hands-free, agent, and live-session projections as
+  // soon as React mounts. Load it only after every secure handler exists.
+  await loadPilotOverlayWindow(
+    pilotOverlayWindow,
+    isDevelopment,
+    developmentServerUrl,
+    settings.snapshot().pilotOverlay,
+  );
   obsBridge.start();
   if (cloudBridge !== undefined) {
     void cloudBridge
@@ -2002,15 +2391,27 @@ async function startApplication(): Promise<void> {
 
 async function shutdown(): Promise<void> {
   stateService.setLifecycle('stopping');
+  let deadline: ReturnType<typeof setTimeout> | undefined;
   try {
-    await lifecycle.dispose();
+    await Promise.race([
+      lifecycle.dispose(),
+      new Promise<never>((_resolve, reject) => {
+        deadline = setTimeout(
+          () => reject(new Error('SHUTDOWN_CLEANUP_DEADLINE_EXCEEDED')),
+          SHUTDOWN_DEADLINE_MS,
+        );
+      }),
+    ]);
   } catch (error: unknown) {
-    console.error(
+    secureLogError(
       'ObscurPilot shutdown cleanup failed:',
-      error instanceof Error ? error.message : 'Unknown cleanup error',
+      safeErrorMessage(error, 'Unknown cleanup error'),
     );
   } finally {
-    app.quit();
+    clearTimeout(deadline);
+    // At this point all cooperative disposers ran or exhausted their bounded
+    // grace period. A provider socket or native addon may not veto app exit.
+    app.exit(0);
   }
 }
 
@@ -2021,8 +2422,8 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(startApplication)
     .catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : 'Unknown startup error';
-      console.error('ObscurPilot startup failed:', message);
+      const message = safeErrorMessage(error, 'Unknown startup error');
+      secureLogError('ObscurPilot startup failed:', message);
       dialog.showErrorBox(
         'ObscurPilot could not start',
         `${message}\n\nCheck the development terminal for details.`,

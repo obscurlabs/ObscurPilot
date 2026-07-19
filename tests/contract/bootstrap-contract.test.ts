@@ -14,6 +14,7 @@ const validProjection = {
     node: '24.0.0',
   },
   configuration: {
+    deepgramConfigured: false,
     groqConfigured: false,
     supabaseConfigured: false,
     twitchConfigured: false,

@@ -86,8 +86,10 @@ export function createBrowserSpeechQueue(onFallback: (message: string) => void) 
 export function announcementForAgent(agent: AgentInteractionProjection): string | null {
   if (agent.phase === 'awaiting_confirmation')
     return 'Approval required for the protected command.';
-  if (agent.phase === 'completed') return 'Command completed.';
-  if (agent.phase === 'error') return 'The command stopped safely. Review recovery guidance.';
+  // Completion speech is emitted by the hands-free orchestration boundary only
+  // after it has the model's task-specific, tool-grounded response.
+  if (agent.phase === 'completed') return null;
+  if (agent.phase === 'error') return null;
   return null;
 }
 

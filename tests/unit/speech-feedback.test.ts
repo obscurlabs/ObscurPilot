@@ -48,11 +48,14 @@ describe('native speech feedback queue', () => {
   });
 
   it('announces only important bounded agent transitions', () => {
-    expect(announcementForAgent({ phase: 'completed', reasonCode: 'DONE', elapsedMs: 10 })).toBe(
-      'Command completed.',
-    );
+    expect(
+      announcementForAgent({ phase: 'completed', reasonCode: 'DONE', elapsedMs: 10 }),
+    ).toBeNull();
     expect(
       announcementForAgent({ phase: 'reasoning', reasonCode: 'MODEL_ACTIVE', elapsedMs: 10 }),
+    ).toBeNull();
+    expect(
+      announcementForAgent({ phase: 'error', reasonCode: 'RATE_LIMITED', elapsedMs: 10 }),
     ).toBeNull();
   });
 });

@@ -581,6 +581,73 @@ export function LiveSessionConsole({ obs }: { readonly obs: ObsProjection | unde
                     </li>
                   ))}
                 </ol>
+                <section className="session-assurance" aria-label="Verified execution assurance">
+                  <div className="assurance-summary">
+                    <div>
+                      <span>Preflight</span>
+                      <strong>
+                        {
+                          (session.preflightChecks ?? []).filter(
+                            (check) => check.status === 'passed',
+                          ).length
+                        }
+                        /{session.preflightChecks?.length ?? 0}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Verified operations</span>
+                      <strong>
+                        {session.reliability?.verified ?? 0}/{session.reliability?.operations ?? 0}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>P95 execution</span>
+                      <strong>{session.reliability?.p95LatencyMs ?? 0}ms</strong>
+                    </div>
+                    <div>
+                      <span>Recovery attempts</span>
+                      <strong>{session.reliability?.recoveries ?? 0}</strong>
+                    </div>
+                  </div>
+                  {(session.preflightChecks?.length ?? 0) > 0 ? (
+                    <ul className="assurance-checks">
+                      {session.preflightChecks?.map((check) => (
+                        <li key={check.id} data-status={check.status}>
+                          <span aria-hidden="true" />
+                          <div>
+                            <strong>{check.id.replaceAll('.', ' ')}</strong>
+                            <small>{check.reasonCode.replaceAll('_', ' ')}</small>
+                          </div>
+                          <Badge
+                            tone={
+                              check.status === 'passed'
+                                ? 'ready'
+                                : check.status === 'warning'
+                                  ? 'waiting'
+                                  : 'neutral'
+                            }
+                          >
+                            {check.status}
+                          </Badge>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {(session.executionReceipts?.length ?? 0) > 0 ? (
+                    <ol className="assurance-receipts" aria-label="Recent execution receipts">
+                      {session.executionReceipts?.slice(-5).map((receipt) => (
+                        <li key={receipt.receiptId} data-status={receipt.status}>
+                          <span>{receipt.step.replaceAll('_', ' ')}</span>
+                          <strong>{receipt.reasonCode.replaceAll('_', ' ')}</strong>
+                          <small>
+                            {receipt.verification.replaceAll('_', ' ')} · {receipt.durationMs ?? 0}
+                            ms
+                          </small>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : null}
+                </section>
                 {session.countdownRemainingSeconds !== undefined ? (
                   <div className="countdown-readout">
                     <span>Starting soon</span>

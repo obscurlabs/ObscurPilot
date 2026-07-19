@@ -44,6 +44,10 @@
       "types": "./dist/live-session-coordinator.d.ts",
       "import": "./dist/live-session-coordinator.js"
     },
+    "./reliability-tracker": {
+      "types": "./dist/reliability-tracker.d.ts",
+      "import": "./dist/reliability-tracker.js"
+    },
     "./chat-intelligence": {
       "types": "./dist/chat-intelligence.d.ts",
       "import": "./dist/chat-intelligence.js"

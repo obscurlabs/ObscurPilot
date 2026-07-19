@@ -25,8 +25,50 @@ const loopbackWebSocketUrl = z.preprocess(
       return url.protocol === 'ws:' && isLoopback && url.username === '' && url.password === '';
     }, 'OBS_WEBSOCKET_URL must be a loopback WS URL without embedded credentials'),
 );
+const optionalNumber = (minimum: number, maximum: number, fallback: number) =>
+  z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().finite().min(minimum).max(maximum).default(fallback),
+  );
 
 const EnvironmentSchema = z.object({
+  WAKE_WORD_ENGINE: z.preprocess(
+    emptyToUndefined,
+    z
+      .enum(['sherpa_onnx', 'sherpa-onnx', 'transcript'])
+      .default('sherpa_onnx')
+      .transform((value) => (value === 'sherpa-onnx' ? 'sherpa_onnx' : value)),
+  ),
+  WAKE_WORD_PHRASE: z.preprocess(emptyToUndefined, z.literal('hi obscur').default('hi obscur')),
+  WAKE_WORD_MODEL_DIR: optionalAbsolutePath,
+  WAKE_WORD_SCORE: optionalNumber(0.1, 10, 1.5),
+  WAKE_WORD_THRESHOLD: optionalNumber(0.05, 0.95, 0.35),
+  WAKE_WORD_COOLDOWN_MS: optionalNumber(250, 10_000, 2_000),
+  VOICE_AGENT_PROVIDER: z.preprocess(
+    emptyToUndefined,
+    z.enum(['deepgram', 'groq']).default('deepgram'),
+  ),
+  DEEPGRAM_API_KEY: optionalSecret,
+  DEEPGRAM_AGENT_URL: z.preprocess(
+    emptyToUndefined,
+    z
+      .string()
+      .url()
+      .default('wss://agent.deepgram.com/v1/agent/converse')
+      .refine((value) => new URL(value).protocol === 'wss:', 'Deepgram agent URL must use WSS'),
+  ),
+  DEEPGRAM_LISTEN_MODEL: z.preprocess(
+    emptyToUndefined,
+    z.enum(['flux-general-en', 'flux-general-multi', 'nova-3']).default('flux-general-en'),
+  ),
+  DEEPGRAM_THINK_MODEL: z.preprocess(
+    emptyToUndefined,
+    z.string().trim().min(1).max(128).default('gpt-4o-mini'),
+  ),
+  DEEPGRAM_VOICE_MODEL: z.preprocess(
+    emptyToUndefined,
+    z.string().trim().min(1).max(128).default('aura-2-thalia-en'),
+  ),
   GROQ_API_KEY: optionalSecret,
   GROQ_STT_MODEL: z.preprocess(
     emptyToUndefined,

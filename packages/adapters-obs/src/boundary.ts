@@ -194,6 +194,8 @@ export class ObsBridge {
   private synchronizing = false;
   private dirtyDuringSync = false;
   private stable = false;
+  private password: string | undefined;
+  private reconfiguring = false;
   private resyncTimer: ReturnType<typeof setTimeout> | undefined;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly completed = new Map<string, unknown>();
@@ -206,6 +208,7 @@ export class ObsBridge {
     this.now = options.now ?? Date.now;
     this.id = options.id ?? (() => crypto.randomUUID());
     this.random = options.random ?? Math.random;
+    this.password = options.password;
     this.removeInvalidated = this.transport.onInvalidated(() => this.invalidate());
     this.removeDisconnected = this.transport.onDisconnected(() => this.handleDisconnect());
   }
@@ -222,6 +225,31 @@ export class ObsBridge {
     clearTimeout(this.reconnectTimer);
     await this.transport.disconnect().catch(() => undefined);
     this.handleDisconnect();
+  }
+
+  public async reconfigurePassword(password: string | undefined): Promise<ObsSnapshot> {
+    clearTimeout(this.resyncTimer);
+    clearTimeout(this.reconnectTimer);
+    this.resyncTimer = undefined;
+    this.reconnectTimer = undefined;
+    this.reconfiguring = true;
+    this.generation += 1;
+    this.stable = false;
+    this.snapshotValue = undefined;
+    try {
+      await this.transport.disconnect().catch(() => undefined);
+    } finally {
+      this.reconfiguring = false;
+    }
+    this.password = password;
+    this.stopped = false;
+    this.attempt = 0;
+    await this.connectAndSynchronize(false);
+    const snapshot = this.snapshotValue;
+    if (snapshot === undefined) {
+      throw new ObsBridgeError('UPSTREAM_UNAVAILABLE', 'OBS pairing did not produce a snapshot');
+    }
+    return snapshot;
   }
 
   public snapshot(): ObsSnapshot | undefined {
@@ -287,14 +315,14 @@ export class ObsBridge {
     this.emit('stopped', this.attempt, 'STOPPED');
   }
 
-  private async connectAndSynchronize(): Promise<void> {
+  private async connectAndSynchronize(recover = true): Promise<void> {
     if (this.stopped) return;
     const generation = ++this.generation;
     this.stable = false;
     this.snapshotValue = undefined;
     this.emit(this.attempt === 0 ? 'connecting' : 'reconnecting', this.attempt, 'CONNECTING');
     try {
-      const handshake = await this.transport.connect(this.options.url, this.options.password);
+      const handshake = await this.transport.connect(this.options.url, this.password);
       if (handshake.rpcVersion !== 1 || handshake.negotiatedRpcVersion !== 1) {
         throw new ObsBridgeError('VERSION_MISMATCH', 'OBS WebSocket RPC version 1 is required');
       }
@@ -313,13 +341,20 @@ export class ObsBridge {
       await this.transport.disconnect().catch(() => undefined);
       if (isAuthError(error)) {
         this.emit('auth_required', this.attempt, 'AUTH_REQUIRED');
+        if (!recover) {
+          throw new ObsBridgeError('AUTH_REQUIRED', 'OBS rejected the WebSocket password');
+        }
         return;
       }
       if (error instanceof ObsBridgeError && error.code === 'VERSION_MISMATCH') {
         this.emit('degraded', this.attempt, 'VERSION_MISMATCH');
+        if (!recover) throw error;
         return;
       }
       this.emit('backoff', this.attempt, 'RETRYABLE_FAILURE');
+      if (!recover) {
+        throw new ObsBridgeError('UPSTREAM_UNAVAILABLE', 'OBS is unavailable on the loopback port');
+      }
       this.scheduleReconnect();
     }
   }
@@ -406,7 +441,7 @@ export class ObsBridge {
   }
 
   private handleDisconnect(): void {
-    if (this.stopped) return;
+    if (this.stopped || this.reconfiguring) return;
     this.generation += 1;
     this.stable = false;
     this.snapshotValue = undefined;

@@ -35,6 +35,12 @@ import {
   ObsProjectionSchema,
   ReconnectObsPayloadSchema,
 } from '@obscurpilot/contracts/obs';
+import {
+  OnboardingEmptyPayloadSchema,
+  OnboardingProjectionSchema,
+  PairObsPayloadSchema,
+  type PairObsPayload,
+} from '@obscurpilot/contracts/onboarding';
 import type { ZodType } from 'zod';
 import {
   CloudAuthProjectionSchema,
@@ -249,6 +255,27 @@ export function createRendererApi(ipc: RendererIpc): Readonly<ObscurPilotRendere
         IPC_CHANNELS.obsReconnect,
         ReconnectObsPayloadSchema.parse({}),
         OperationAcceptedSchema,
+      ),
+    getOnboarding: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.onboardingGetProjection,
+        OnboardingEmptyPayloadSchema.parse({}),
+        OnboardingProjectionSchema,
+      ),
+    pairObs: (payload: PairObsPayload) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.onboardingPairObs,
+        PairObsPayloadSchema.parse(payload),
+        OnboardingProjectionSchema,
+      ),
+    clearObsPairing: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.onboardingClearObs,
+        OnboardingEmptyPayloadSchema.parse({}),
+        OnboardingProjectionSchema,
       ),
     getCloudAuth: () =>
       invoke(

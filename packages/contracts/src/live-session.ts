@@ -101,6 +101,57 @@ export const LiveSessionPhaseSchema = z.enum([
 ]);
 export type LiveSessionPhase = z.infer<typeof LiveSessionPhaseSchema>;
 
+export const LiveSessionPreflightCheckSchema = z
+  .object({
+    id: z.enum([
+      'desktop.obs_process',
+      'obs.connection',
+      'obs.scene_collection',
+      'obs.pre_live_scene',
+      'obs.live_scene',
+      'obs.required_inputs',
+      'obs.output_idle',
+      'twitch.connection',
+      'twitch.category',
+      'twitch.scopes',
+    ]),
+    status: z.enum(['passed', 'failed', 'warning']),
+    critical: z.boolean(),
+    reasonCode: z.string().min(1).max(96),
+    checkedAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type LiveSessionPreflightCheck = z.infer<typeof LiveSessionPreflightCheckSchema>;
+
+export const LiveSessionExecutionReceiptSchema = z
+  .object({
+    receiptId: z.string().uuid(),
+    step: LiveSessionStepSchema,
+    status: z.enum(['running', 'verified', 'failed', 'compensated']),
+    verification: z.enum(['local', 'obs', 'twitch', 'obs_and_twitch']),
+    reasonCode: z.string().min(1).max(96),
+    attempt: z.number().int().positive().max(10),
+    startedAt: z.string().datetime({ offset: true }),
+    completedAt: z.string().datetime({ offset: true }).optional(),
+    durationMs: z.number().int().nonnegative().max(300_000).optional(),
+  })
+  .strict();
+export type LiveSessionExecutionReceipt = z.infer<typeof LiveSessionExecutionReceiptSchema>;
+
+export const LiveSessionReliabilitySchema = z
+  .object({
+    operations: z.number().int().nonnegative(),
+    verified: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+    recoveries: z.number().int().nonnegative(),
+    duplicatesPrevented: z.number().int().nonnegative(),
+    successRate: z.number().min(0).max(1),
+    p50LatencyMs: z.number().int().nonnegative(),
+    p95LatencyMs: z.number().int().nonnegative(),
+  })
+  .strict();
+export type LiveSessionReliability = z.infer<typeof LiveSessionReliabilitySchema>;
+
 export const LiveSessionProjectionSchema = z
   .object({
     phase: LiveSessionPhaseSchema,
@@ -113,6 +164,9 @@ export const LiveSessionProjectionSchema = z
     obsStreamActive: z.boolean(),
     twitchLive: z.boolean(),
     liveVerified: z.boolean(),
+    preflightChecks: z.array(LiveSessionPreflightCheckSchema).max(16).optional(),
+    executionReceipts: z.array(LiveSessionExecutionReceiptSchema).max(32).optional(),
+    reliability: LiveSessionReliabilitySchema.optional(),
   })
   .strict();
 export type LiveSessionProjection = z.infer<typeof LiveSessionProjectionSchema>;

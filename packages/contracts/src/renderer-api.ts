@@ -7,6 +7,7 @@ import type {
   PttProjection,
 } from './audio.js';
 import type { ObsProjection } from './obs.js';
+import type { OnboardingProjection, PairObsPayload } from './onboarding.js';
 import type { AppSnapshot, StateChanged } from './state.js';
 import type {
   CloudAuthProjection,
@@ -49,6 +50,9 @@ export interface ObscurPilotRendererApi {
   ): () => void;
   getObsSnapshot(): Promise<ObsProjection>;
   reconnectObs(): Promise<{ accepted: true }>;
+  getOnboarding(): Promise<OnboardingProjection>;
+  pairObs(payload: PairObsPayload): Promise<OnboardingProjection>;
+  clearObsPairing(): Promise<OnboardingProjection>;
   getCloudAuth(): Promise<CloudAuthProjection>;
   signInCloud(credentials: CloudCredentialPayload): Promise<CloudAuthProjection>;
   signUpCloud(credentials: CloudCredentialPayload): Promise<CloudAuthProjection>;

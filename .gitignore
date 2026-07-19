@@ -6,6 +6,8 @@ playwright-report/
 test-results/
 artifacts/
 release/
+apps/desktop/resources/wake-word/
+apps/desktop/resources/*.tar.bz2
 supabase/.temp/
 *.log
 

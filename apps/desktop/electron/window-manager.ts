@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { BrowserWindow, screen, session } from 'electron';
 import type { PilotOverlayPreferences } from '@obscurpilot/contracts/live-session';
 import { registerApplicationProtocol } from './application-protocol.js';
+import { secureLogError } from './redaction.js';
 
 export function createMainWindowShell(isDevelopment: boolean): BrowserWindow {
   const window = new BrowserWindow({
@@ -36,11 +37,11 @@ export function createMainWindowShell(isDevelopment: boolean): BrowserWindow {
   }
   window.webContents.on('did-fail-load', (_event, code, description, validatedUrl) => {
     window.setTitle('ObscurPilot — Interface unavailable');
-    console.error('ObscurPilot renderer load failed:', code, description, validatedUrl);
+    secureLogError('ObscurPilot renderer load failed:', code, description, validatedUrl);
   });
   window.webContents.on('render-process-gone', (_event, details) => {
     window.setTitle('ObscurPilot — Renderer stopped');
-    console.error('ObscurPilot renderer stopped:', details.reason);
+    secureLogError('ObscurPilot renderer stopped:', details.reason);
   });
   window.setProgressBar(2, { mode: 'indeterminate' });
   return window;
@@ -123,11 +124,10 @@ export async function createAudioCaptureWindow(
   return captureWindow;
 }
 
-export async function createPilotOverlayWindow(
+export function createPilotOverlayWindowShell(
   isDevelopment: boolean,
-  developmentServerUrl: URL,
   preferences: PilotOverlayPreferences,
-): Promise<BrowserWindow> {
+): BrowserWindow {
   const window = new BrowserWindow({
     width: Math.round(288 * preferences.scale),
     height: Math.round(172 * preferences.scale),
@@ -158,13 +158,22 @@ export async function createPilotOverlayWindow(
   if (!isDevelopment) {
     window.webContents.on('devtools-opened', () => window.webContents.closeDevTools());
   }
+  return window;
+}
+
+export async function loadPilotOverlayWindow(
+  window: BrowserWindow,
+  isDevelopment: boolean,
+  developmentServerUrl: URL,
+  preferences: PilotOverlayPreferences,
+): Promise<void> {
+  if (window.isDestroyed()) throw new Error('Pilot overlay was closed during startup');
   if (isDevelopment) {
     await window.loadURL(new URL('/overlay.html', developmentServerUrl).href);
   } else {
     await window.loadURL('app://bundle/overlay.html');
   }
   applyPilotOverlayPreferences(window, preferences);
-  return window;
 }
 
 export function applyPilotOverlayPreferences(

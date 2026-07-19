@@ -47,6 +47,9 @@ async function expectNarrowRendererBoundary(page: Page): Promise<void> {
       'onAgentInteractionChanged',
       'getObsSnapshot',
       'reconnectObs',
+      'getOnboarding',
+      'pairObs',
+      'clearObsPairing',
       'getCloudAuth',
       'signInCloud',
       'signUpCloud',
@@ -76,7 +79,10 @@ async function expectNarrowRendererBoundary(page: Page): Promise<void> {
     processType: 'undefined',
   });
 
-  await expect(page.getByText('Stage 11.1 · Hands-free ready')).toBeVisible();
+  await expect(page.getByText('Stage 13 · Hardened runtime')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Connect your production workspace' }),
+  ).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Control board sections' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Command', exact: true })).toHaveAttribute(
     'aria-current',
@@ -124,7 +130,10 @@ test('production renderer starts behind the narrow preload boundary', async () =
   }
 
   const electronApplication = await electron.launch({
-    args: [resolve('apps/desktop')],
+    args: [
+      resolve('apps/desktop'),
+      '--user-data-dir=' + resolve('test-results', 'overlay-ipc-' + process.pid),
+    ],
     executablePath: electronPath,
     env: {
       ...process.env,
@@ -194,6 +203,48 @@ test('production renderer starts behind the narrow preload boundary', async () =
   }
 });
 
+test('corner Pilot mounts only after its projection IPC handlers are ready', async () => {
+  const require = createRequire(import.meta.url);
+  const electronPath: unknown = require('electron');
+  if (typeof electronPath !== 'string') {
+    throw new Error('Pinned Electron executable could not be resolved');
+  }
+
+  const electronApplication = await electron.launch({
+    args: [
+      resolve('apps/desktop'),
+      '--user-data-dir=' + resolve('test-results', 'overlay-ipc-race-' + process.pid),
+    ],
+    executablePath: electronPath,
+    env: { ...process.env, OBSCURPILOT_E2E: '1' },
+  });
+  const stderr: string[] = [];
+  electronApplication.process().stderr?.setEncoding('utf8');
+  electronApplication.process().stderr?.on('data', (chunk: string) => stderr.push(chunk));
+  try {
+    await getMainWindow(electronApplication);
+    await expect
+      .poll(() =>
+        electronApplication
+          .windows()
+          .find((candidate) => candidate.url() === 'app://bundle/overlay.html'),
+      )
+      .toBeTruthy();
+    const overlay = electronApplication
+      .windows()
+      .find((candidate) => candidate.url() === 'app://bundle/overlay.html');
+    if (overlay === undefined) throw new Error('Corner Pilot overlay was not created');
+    await expect(overlay.getByText('OBSCURPILOT')).toBeVisible();
+    await expect(overlay.locator('.pilot-presence')).toHaveAttribute('data-phase', /.+/u);
+    await overlay.waitForTimeout(500);
+    expect(stderr.join('')).not.toMatch(
+      /No handler registered for '(?:agent:get-projection|live-session:get-projection|audio:hands-free-get):v1'/u,
+    );
+  } finally {
+    await electronApplication.close();
+  }
+});
+
 test('closing the control board shuts down the hidden audio runtime', async () => {
   const require = createRequire(import.meta.url);
   const electronPath: unknown = require('electron');
@@ -202,7 +253,10 @@ test('closing the control board shuts down the hidden audio runtime', async () =
   }
 
   const electronApplication = await electron.launch({
-    args: [resolve('apps/desktop')],
+    args: [
+      resolve('apps/desktop'),
+      '--user-data-dir=' + resolve('test-results', 'shutdown-' + process.pid),
+    ],
     executablePath: electronPath,
     env: {
       ...process.env,
@@ -211,7 +265,7 @@ test('closing the control board shuts down the hidden audio runtime', async () =
   });
   let exited = false;
   try {
-    const mainWindow = await getMainWindow(electronApplication);
+    await getMainWindow(electronApplication);
     const processExited = new Promise<void>((resolveExit, rejectExit) => {
       const timer = setTimeout(
         () => rejectExit(new Error('Electron did not exit after the main window closed')),
@@ -223,7 +277,15 @@ test('closing the control board shuts down the hidden audio runtime', async () =
         resolveExit();
       });
     });
-    await mainWindow.close();
+    await electronApplication.evaluate(({ BrowserWindow }) => {
+      const controlBoard = BrowserWindow.getAllWindows().find(
+        (candidate) => candidate.webContents.getURL() === 'app://bundle/index.html',
+      );
+      if (controlBoard === undefined) throw new Error('Control board window is unavailable');
+      // Return across Playwright's RPC boundary before closing the renderer that
+      // carries that boundary; Page.close() can otherwise wait on its own teardown.
+      setTimeout(() => controlBoard.close(), 100);
+    });
     await processExited;
   } finally {
     if (!exited) await electronApplication.close();
@@ -234,7 +296,11 @@ test('unsigned unpacked Windows artifact starts successfully', async () => {
   const executablePath = resolve('artifacts/win-unpacked/ObscurPilot.exe');
   test.skip(!existsSync(executablePath), 'Run npm run package:dir before packaged smoke testing');
 
-  const electronApplication = await electron.launch({ executablePath });
+  const electronApplication = await electron.launch({
+    executablePath,
+    args: ['--user-data-dir=' + resolve('test-results', 'artifact-' + process.pid)],
+    env: { ...process.env, OBSCURPILOT_E2E: '1' },
+  });
   try {
     await expectNarrowRendererBoundary(await getMainWindow(electronApplication));
   } finally {

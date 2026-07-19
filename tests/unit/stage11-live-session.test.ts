@@ -56,7 +56,7 @@ function snapshot(): ObsSnapshot {
 function harness(scopes: readonly string[] = ['channel:manage:broadcast']) {
   const state = snapshot();
   const obs: LiveSessionObsPort = {
-    snapshot: () => state,
+    snapshot: vi.fn(() => state),
     setProgramScene: vi.fn(async (name) => {
       state.currentProgramSceneName = name;
     }),
@@ -89,6 +89,13 @@ function harness(scopes: readonly string[] = ['channel:manage:broadcast']) {
     })),
     updateMetadata: vi.fn(async () => undefined),
     restoreMetadata: vi.fn(async () => undefined),
+    readMetadata: vi.fn(async () => ({
+      title: profile.twitch.title,
+      categoryId: profile.twitch.categoryId,
+      categoryName: profile.twitch.categoryName,
+      tags: [...profile.twitch.tags],
+      language: profile.twitch.language,
+    })),
     isLive: vi.fn(async () => state.streamActive),
   };
   const coordinator = new LiveSessionCoordinator({
@@ -118,6 +125,13 @@ describe('Stage 11 live-session safety', () => {
       expect.any(String),
       expect.any(AbortSignal),
     );
+    expect(
+      coordinator.snapshot().preflightChecks?.every((check) => check.status === 'passed'),
+    ).toBe(true);
+    expect(
+      coordinator.snapshot().executionReceipts?.every((receipt) => receipt.status === 'verified'),
+    ).toBe(true);
+    expect(coordinator.snapshot().reliability?.failed).toBe(0);
   });
 
   it('fails closed when live authorization lacks the broadcast scope', async () => {
@@ -126,6 +140,85 @@ describe('Stage 11 live-session safety', () => {
     expect(result).toMatchObject({ phase: 'failed', reasonCode: 'TWITCH_SCOPE_REQUIRED' });
     expect(obs.startStream).not.toHaveBeenCalled();
     expect(twitch.updateMetadata).not.toHaveBeenCalled();
+  });
+
+  it('rolls back and reports a failed receipt when Twitch metadata cannot be read back', async () => {
+    const { coordinator, twitch } = harness();
+    vi.mocked(twitch.readMetadata).mockResolvedValue({
+      title: 'Provider returned stale metadata',
+      categoryId: '1',
+      categoryName: 'Previous',
+      tags: [],
+      language: 'en',
+    });
+    const prepared = await coordinator.prepare(profile, 'live');
+    coordinator.decide(prepared.plan!.planId, 'approve');
+    await vi.waitFor(() => expect(coordinator.snapshot().phase).toBe('failed'));
+    expect(twitch.restoreMetadata).toHaveBeenCalledOnce();
+    expect(coordinator.snapshot().reasonCode).toBe('TWITCH_METADATA_VERIFICATION_FAILED');
+    expect(coordinator.snapshot().executionReceipts).toContainEqual(
+      expect.objectContaining({
+        step: 'apply_twitch',
+        status: 'failed',
+        reasonCode: 'TWITCH_METADATA_VERIFICATION_FAILED',
+      }),
+    );
+  });
+
+  it('does not report stopped while either authoritative output remains active', async () => {
+    const { coordinator, obs } = harness();
+    const prepared = await coordinator.prepare(profile, 'live');
+    coordinator.decide(prepared.plan!.planId, 'approve');
+    await vi.waitFor(() => expect(coordinator.snapshot().phase).toBe('live'));
+    vi.mocked(obs.stopStream).mockImplementation(async () => undefined);
+    vi.mocked(obs.stopRecord).mockImplementation(async () => undefined);
+    const stopped = await coordinator.stop(true);
+    expect(stopped).toMatchObject({
+      phase: 'failed',
+      reasonCode: 'STOP_VERIFICATION_TIMEOUT',
+    });
+  });
+
+  it('fails closed instead of reporting stopped when the OBS snapshot is unavailable', async () => {
+    const { coordinator, obs } = harness();
+    vi.mocked(obs.snapshot).mockReturnValue(undefined);
+    const stopped = await coordinator.stop(false);
+    expect(stopped).toMatchObject({
+      phase: 'failed',
+      reasonCode: 'STOP_VERIFICATION_TIMEOUT',
+    });
+  });
+
+  it('verifies Twitch is offline even when there is no prepared session plan', async () => {
+    const { coordinator, twitch, state } = harness();
+    state.streamActive = false;
+    vi.mocked(twitch.isLive).mockResolvedValue(true);
+    const stopped = await coordinator.stop(false);
+    expect(stopped).toMatchObject({
+      phase: 'failed',
+      reasonCode: 'STOP_VERIFICATION_TIMEOUT',
+    });
+  });
+
+  it('does not stop an active broadcast merely because the desktop app is disposed', async () => {
+    const { coordinator, obs } = harness();
+    const prepared = await coordinator.prepare(profile, 'live');
+    coordinator.decide(prepared.plan!.planId, 'approve');
+    await vi.waitFor(() => expect(coordinator.snapshot().phase).toBe('live'));
+    await coordinator.dispose();
+    expect(obs.stopStream).not.toHaveBeenCalled();
+    expect(obs.stopRecord).not.toHaveBeenCalled();
+  });
+
+  it('returns to the prepared pre-live scene after the outputs are verified offline', async () => {
+    const { coordinator, state } = harness();
+    const prepared = await coordinator.prepare(profile, 'live');
+    coordinator.decide(prepared.plan!.planId, 'approve');
+    await vi.waitFor(() => expect(coordinator.snapshot().phase).toBe('live'));
+    expect(state.currentProgramSceneName).toBe('Game');
+    const stopped = await coordinator.stop(false);
+    expect(stopped).toMatchObject({ phase: 'stopped', reasonCode: 'STOPPED' });
+    expect(state.currentProgramSceneName).toBe('Starting');
   });
 });
 
