@@ -10,7 +10,7 @@ import {
 } from '@obscurpilot/contracts/audio';
 import { AudioClipVault, PttAudioPipeline } from '@obscurpilot/domain/audio-pipeline';
 import type { EncodedAudioClip } from '@obscurpilot/domain/audio-pipeline';
-import { globalShortcut, type BrowserWindow, type IpcMain, type IpcMainEvent } from 'electron';
+import type { BrowserWindow, IpcMain, IpcMainEvent } from 'electron';
 import { z } from 'zod';
 import type { SecureSettingsStore } from '../storage/secure-settings.js';
 
@@ -62,7 +62,6 @@ export class PttAudioService {
   >();
   private readonly pipeline: PttAudioPipeline;
   private watchdog: ReturnType<typeof setTimeout> | undefined;
-  private accelerator = '';
   private disposed = false;
   private handsFreeSessions = new Set<string>();
   private handsFree: HandsFreePreferences = HandsFreePreferencesSchema.parse({
@@ -99,10 +98,11 @@ export class PttAudioService {
 
   public async start(): Promise<void> {
     const settings = await this.settings.load();
-    this.handsFree = settings.handsFree;
-    this.setAcceleratorRegistration(settings.accelerator);
+    // Hard requirement: the agent listens only while the talk shortcut is
+    // engaged. Hands-free monitoring stays off at startup; it can only be
+    // re-enabled by an explicit in-session user action.
+    this.handsFree = { ...settings.handsFree, enabled: false };
     this.publish(this.pipeline.projection());
-    if (this.handsFree.enabled) this.startMonitor();
   }
 
   public press(): void {
@@ -141,11 +141,6 @@ export class PttAudioService {
       });
     }
     this.pipeline.cancel();
-  }
-
-  public async setAccelerator(accelerator: string): Promise<void> {
-    this.setAcceleratorRegistration(accelerator);
-    await this.settings.update({ accelerator });
   }
 
   public async selectDevice(deviceId: string): Promise<void> {
@@ -196,7 +191,6 @@ export class PttAudioService {
     if (this.disposed) return;
     this.disposed = true;
     clearTimeout(this.watchdog);
-    if (this.accelerator !== '') globalShortcut.unregister(this.accelerator);
     this.pipeline.cancel('SHUTDOWN');
     this.captureWindow.webContents.send(INTERNAL_COMMAND, { kind: 'monitor-stop' });
     this.vault.dispose();
@@ -261,18 +255,6 @@ export class PttAudioService {
       speechThreshold: this.handsFree.speechThreshold,
       silenceReleaseMs: this.handsFree.silenceReleaseMs,
     });
-  }
-
-  private setAcceleratorRegistration(accelerator: string): void {
-    if (accelerator === this.accelerator) return;
-    const registered = globalShortcut.register(accelerator, () => {
-      const phase = this.pipeline.projection().phase;
-      if (phase === 'arming' || phase === 'capturing') this.release();
-      else this.press();
-    });
-    if (!registered) throw new Error('Push-to-talk accelerator is unavailable');
-    if (this.accelerator !== '') globalShortcut.unregister(this.accelerator);
-    this.accelerator = accelerator;
   }
 
   private publish(projection: PttProjection): void {

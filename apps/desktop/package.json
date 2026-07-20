@@ -11,7 +11,7 @@
     "start": "electron . --built-renderer",
     "dev": "npm run build:electron && concurrently -k -s first \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "build": "npm run clean && npm run build:electron && vite build",
-    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist-electron/main.cjs --external:electron && esbuild electron/preload.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist-electron/preload.cjs --external:electron && esbuild electron/audio-capture-preload.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist-electron/audio-preload.cjs --external:electron",
+    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist-electron/main.cjs --external:electron --external:uiohook-napi && esbuild electron/preload.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist-electron/preload.cjs --external:electron && esbuild electron/audio-capture-preload.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist-electron/audio-preload.cjs --external:electron",
     "clean": "rimraf dist-electron dist-renderer .types",
     "package:dir": "electron-builder --dir"
   },
@@ -25,6 +25,7 @@
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "tailwind-merge": "3.6.0",
+    "uiohook-napi": "1.5.5",
     "zod": "4.4.3"
   },
   "devDependencies": {

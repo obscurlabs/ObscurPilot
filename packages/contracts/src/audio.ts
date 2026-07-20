@@ -39,9 +39,23 @@ export const PttCommandPayloadSchema = z
   .strict();
 export type PttCommandPayload = z.infer<typeof PttCommandPayloadSchema>;
 
-export const SetPttAcceleratorPayloadSchema = z
-  .object({ accelerator: z.string().trim().min(1).max(64) })
+export const ShortcutBindingsSchema = z
+  .object({
+    holdToTalk: z.string().trim().max(64),
+    toggleTalk: z.string().trim().max(64),
+    terminate: z.string().trim().max(64),
+    toggleWindow: z.string().trim().max(64),
+  })
   .strict();
+export type ShortcutBindings = z.infer<typeof ShortcutBindingsSchema>;
+export type ShortcutAction = keyof ShortcutBindings;
+
+export const DEFAULT_SHORTCUT_BINDINGS: ShortcutBindings = {
+  holdToTalk: 'Alt+X',
+  toggleTalk: '',
+  terminate: 'Ctrl+Alt+End',
+  toggleWindow: 'Alt+Shift+O',
+};
 
 export const AudioDeviceSchema = z
   .object({

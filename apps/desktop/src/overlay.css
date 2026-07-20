@@ -31,7 +31,7 @@ body,
   border-radius: 22px;
   color: #ecfdf9;
   background:
-    radial-gradient(circle at 12% 40%, rgba(94, 234, 212, 0.12), transparent 34%),
+    radial-gradient(circle at 12% 40%, rgba(139, 124, 255, 0.12), transparent 34%),
     linear-gradient(145deg, rgba(8, 13, 20, 0.94), rgba(3, 6, 10, 0.88));
   box-shadow: 0 14px 45px rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(16px);
@@ -57,17 +57,17 @@ body,
   background: radial-gradient(
     circle at 35% 30%,
     #d6fff8 0 7%,
-    #5eead4 24%,
+    #8b7cff 24%,
     #14b8a6 58%,
     #071b1a 100%
   );
-  box-shadow: 0 0 calc(12px + var(--overlay-energy, 0) * 22px) rgba(94, 234, 212, 0.7);
+  box-shadow: 0 0 calc(12px + var(--overlay-energy, 0) * 22px) rgba(139, 124, 255, 0.7);
   transform: scale(calc(1 + var(--overlay-energy, 0) * 0.2));
 }
 
 .pilot-wave {
   inset: 5px;
-  border: 1px solid rgba(94, 234, 212, 0.36);
+  border: 1px solid rgba(139, 124, 255, 0.36);
   animation: pilot-wave 1.8s ease-out infinite;
 }
 
@@ -82,7 +82,7 @@ body,
 }
 
 .pilot-kicker {
-  color: #5eead4;
+  color: #8b7cff;
   font-size: 0.52rem;
   font-weight: 720;
   letter-spacing: 0.16em;

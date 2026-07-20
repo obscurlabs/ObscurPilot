@@ -13,8 +13,9 @@ import {
   HandsFreeSpeechFinishedPayloadSchema,
   OperationAcceptedSchema,
   PttCommandPayloadSchema,
+  DEFAULT_SHORTCUT_BINDINGS,
   SelectAudioDevicePayloadSchema,
-  SetPttAcceleratorPayloadSchema,
+  ShortcutBindingsSchema,
 } from '@obscurpilot/contracts/audio';
 import { IPC_CHANNELS } from '@obscurpilot/contracts/ipc';
 import {
@@ -37,12 +38,16 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
+  nativeImage,
   safeStorage,
   session,
   shell,
+  Tray,
   type IpcMainInvokeEvent,
 } from 'electron';
 import { resolve } from 'node:path';
+import { GlobalShortcutService } from './core/global-shortcuts.js';
 import { PttAudioService } from './services/audio-service.js';
 import { registerApplicationProtocol } from './core/application-protocol.js';
 import {
@@ -130,6 +135,9 @@ import { ObsProcessSupervisor } from './services/obs-process-supervisor.js';
 const lifecycle = new LifecycleScope();
 const stateService = new MainStateService();
 let shutdownStarted = false;
+
+const TRAY_ICON_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVFhH7VcrcNtAEA0sDCwMLAwMNCw0dHPqODAwMLHUcZlhoWFgYGGgoWGhoaGhPnErlex1nnRyde/ubMspCOib2ZE/73bv9ns6O/uPEzG51pex0oNWJkqumPNPMR3rd0mkb2IlT7GSMom09oqS58m13E7H+px1nIwk0sMkkrVjbI/EStJY6XtsnPUdDZwiVvKdlfcTWU3H+oJ1HwQWYbGrcKd4nUSy6EiQa7wxYBtB4OQ+hU3s5RsSkNcA2HSs9FcY9KxNHz7pD7zGC7/bZTkd6/fM9QG8L5/l0aMD4difE0kkI14IZQcXeoAkZF3wIPN2gJFYycZz8t7GWySRzLv6EMZgUqJ+PeSj3B5C0z84n2TOvBpoIkScMaeLNP19mb6UAzz5vy6aPmIdbMOctuatDhfK2jTV53lRPWdFpTuyLIrKyzehtSrDad34gU6/sggdZEW1IOON5OVKa3++eCrrxiKwmxAOi2CQ5z+vHMMdSYtqyGsA9Ieufny3CJyAKD2LYJBl5S0btTaQl7Zig4P6uf4x9SyCQZaVH9kobcB2rQF7wElw9GoiLC2CAWKcFdWaDdeSl+V2u/WWLfcDeMQioN7tDWgdmul1HuTVho1n2a8Rc1t4xrmbK0kkP6xdKrljTguUYppXd4g5nqGTAxheXb2mwbnVwnFCw/ASe4IbHEqSOTWacWo3I6dceoKT24jr/haYVu4CCcZ2H5qLK90fA/1lBySjOxH7ewKn5PaLzYQuMxbQlp2dN55YHrpa1QnnDLUTPAmyfxO1ItwH5yZph81TZu7Y/St9PVjDeMIJRx8xh/B2x6NgcuKJFR8nsnDG7qkw3tj/VtRKkwPhUnst2rib2OOdYGY+j0Lt+83iD9Yi1wDfLtoEAAAAAElFTkSuQmCC';
 
 type Stage11TwitchToolInput = {
   readonly title?: string;
@@ -689,6 +697,72 @@ async function startApplication(): Promise<void> {
     },
   });
   lifecycle.add(() => liveSession.dispose());
+
+  const toggleMainWindow = (): void => {
+    if (mainWindow.isDestroyed()) return;
+    if (mainWindow.isVisible()) {
+      mainWindow.hide();
+    } else {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  };
+  const shortcutService = new GlobalShortcutService({
+    onHoldToTalkDown: () => {
+      voiceOrchestrator?.cancel('SUPERSEDED');
+      activeAudioService.press();
+    },
+    onHoldToTalkUp: () => {
+      activeAudioService.release();
+    },
+    onToggleTalk: () => {
+      const phase = activeAudioService.projection().phase;
+      if (phase === 'arming' || phase === 'capturing') {
+        activeAudioService.release();
+      } else {
+        voiceOrchestrator?.cancel('SUPERSEDED');
+        activeAudioService.press();
+      }
+    },
+    onTerminate: () => {
+      activeAudioService.cancel();
+      voiceOrchestrator?.cancel();
+      void liveSession.stop(true).catch(() => undefined);
+    },
+    onToggleWindow: toggleMainWindow,
+  });
+  try {
+    shortcutService.setBindings(settings.snapshot().shortcuts);
+  } catch (error: unknown) {
+    console.warn(
+      'Stored shortcuts are unusable, falling back to defaults:',
+      error instanceof Error ? error.message : 'unknown reason',
+    );
+    shortcutService.setBindings(DEFAULT_SHORTCUT_BINDINGS);
+    await settings.update({ shortcuts: DEFAULT_SHORTCUT_BINDINGS });
+  }
+  lifecycle.add(() => shortcutService.dispose());
+
+  const trayIcon = nativeImage.createFromDataURL(`data:image/png;base64,${TRAY_ICON_BASE64}`);
+  const tray = new Tray(trayIcon);
+  tray.setToolTip('ObscurPilot — hold your talk shortcut to speak');
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Open ObscurPilot', click: toggleMainWindow },
+      { type: 'separator' },
+      { label: 'Quit ObscurPilot', click: () => app.quit() },
+    ]),
+  );
+  tray.on('click', toggleMainWindow);
+  lifecycle.add(() => tray.destroy());
+
+  mainWindow.on('close', (event) => {
+    if (shutdownStarted) return;
+    event.preventDefault();
+    mainWindow.hide();
+  });
+
   const moderationGuard = new ModerationGuard(new Set());
 
   if (voiceOrchestrator !== undefined && groqClient !== undefined) {
@@ -1570,13 +1644,28 @@ async function startApplication(): Promise<void> {
   lifecycle.add(
     registerSecureHandler({
       ipcMain,
-      channel: IPC_CHANNELS.pttSetAccelerator,
-      payloadSchema: SetPttAcceleratorPayloadSchema,
-      resultSchema: OperationAcceptedSchema,
+      channel: IPC_CHANNELS.shortcutsGet,
+      payloadSchema: EmptyPayloadSchema,
+      resultSchema: ShortcutBindingsSchema,
+      isTrustedSender: trustedSender,
+      handler: () => settings.snapshot().shortcuts,
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.shortcutsSet,
+      payloadSchema: ShortcutBindingsSchema,
+      resultSchema: ShortcutBindingsSchema,
       isTrustedSender: trustedSender,
       handler: async ({ payload }) => {
-        await activeAudioService.setAccelerator(payload.accelerator);
-        return { accepted: true as const };
+        try {
+          shortcutService.setBindings(payload);
+        } catch {
+          throw new PublicFault('PRECONDITION_FAILED', 'One of the shortcuts cannot be used');
+        }
+        await settings.update({ shortcuts: payload });
+        return payload;
       },
     }),
   );

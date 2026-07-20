@@ -12,7 +12,6 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
-import { VoicePresence } from '../components/voice-presence';
 import { LiveSessionConsole } from '../components/live-session-console';
 import {
   activitiesFromSnapshot,
@@ -30,6 +29,73 @@ import {
 } from '../lib/speech-feedback';
 import { applyStateChanged } from '../lib/state-projection';
 import { useUiPreferences } from '../lib/use-ui-preferences';
+import { HomePage } from '../pages/home';
+import { ShortcutsPage } from '../pages/shortcuts';
+
+type Page = 'home' | 'connections' | 'shortcuts' | 'live' | 'activity' | 'settings';
+
+const NAV_ITEMS: ReadonlyArray<{ readonly page: Page; readonly label: string }> = [
+  { page: 'home', label: 'Home' },
+  { page: 'connections', label: 'Connections' },
+  { page: 'shortcuts', label: 'Shortcuts' },
+  { page: 'live', label: 'Live session' },
+  { page: 'activity', label: 'Activity' },
+  { page: 'settings', label: 'Settings' },
+];
+
+function NavIcon({ page }: { readonly page: Page }) {
+  const paths: Record<Page, React.ReactNode> = {
+    home: (
+      <>
+        <path d="M3 10.5 12 3l9 7.5" />
+        <path d="M5 9.5V21h14V9.5" />
+      </>
+    ),
+    connections: (
+      <>
+        <path d="M9 7v4a3 3 0 0 0 6 0V7" />
+        <path d="M12 14v7" />
+        <path d="M8 3v4M16 3v4" />
+      </>
+    ),
+    shortcuts: (
+      <>
+        <rect x="3" y="7" width="18" height="12" rx="2" />
+        <path d="M7 11h.01M11 11h.01M15 11h.01M7 15h10" />
+      </>
+    ),
+    live: (
+      <>
+        <circle cx="12" cy="12" r="2" />
+        <path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4" />
+        <path d="M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2" />
+      </>
+    ),
+    activity: <path d="M3 12h4l3-8 4 16 3-8h4" />,
+    settings: (
+      <>
+        <path d="M4 8h10M18 8h2M4 16h2M10 16h10" />
+        <circle cx="16" cy="8" r="2" />
+        <circle cx="8" cy="16" r="2" />
+      </>
+    ),
+  };
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="18"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.8"
+      viewBox="0 0 24 24"
+      width="18"
+    >
+      {paths[page]}
+    </svg>
+  );
+}
 
 type LoadState =
   | { readonly status: 'loading' }
@@ -331,6 +397,7 @@ function ObsMirror({
 
 export function App() {
   const [loadState, setLoadState] = useState<LoadState>({ status: 'loading' });
+  const [page, setPage] = useState<Page>('home');
   const [obsProjection, setObsProjection] = useState<ObsProjection | undefined>(undefined);
   const snapshotRef = useRef<AppSnapshot | undefined>(undefined);
   const [cloudProjection, setCloudProjection] = useState<CloudAuthProjection | undefined>();
@@ -587,188 +654,124 @@ export function App() {
     });
   };
 
+
   return (
-    <div className="app-shell">
+    <div className="op-shell">
       <a className="skip-link" href="#main-content">
-        Skip to control board
+        Skip to content
       </a>
-      <div className="workspace-layout">
-        <aside className="control-sidebar" aria-label="ObscurPilot workspace navigation">
-          <div className="brand-lockup">
-            <span className="brand-mark" aria-hidden="true">
-              O
-            </span>
-            <div>
-              <span className="brand-name">ObscurPilot</span>
-              <span className="brand-edition">Creator control plane</span>
-            </div>
+      <aside className="op-rail" aria-label="ObscurPilot navigation">
+        <div className="op-brand">
+          <span className="op-brand-mark" aria-hidden="true" />
+          <div>
+            <span className="op-brand-name">ObscurPilot</span>
+            <span className="op-brand-tag">Stream copilot</span>
           </div>
-          <nav className="workspace-nav" aria-label="Control board sections">
-            <a className="workspace-nav-link" href="#command-center" aria-current="page">
-              <span aria-hidden="true">01</span>
-              Command
-            </a>
-            <a className="workspace-nav-link" href="#obs-studio">
-              <span aria-hidden="true">02</span>
-              OBS mirror
-            </a>
-            <a className="workspace-nav-link" href="#connections">
-              <span aria-hidden="true">03</span>
-              Connections
-            </a>
-            <a className="workspace-nav-link" href="#live-session">
-              <span aria-hidden="true">04</span>
-              Live session
-            </a>
-            <a className="workspace-nav-link" href="#activity-timeline">
-              <span aria-hidden="true">04</span>
-              Activity
-            </a>
-            <a className="workspace-nav-link" href="#recovery">
-              <span aria-hidden="true">05</span>
-              Recovery
-            </a>
-            <a className="workspace-nav-link" href="#twitch-integration">
-              <span aria-hidden="true">06</span>
-              Twitch
-            </a>
-            <a className="workspace-nav-link" href="#settings">
-              <span aria-hidden="true">07</span>
-              Settings
-            </a>
-          </nav>
-          <div className="sidebar-health" aria-live="polite">
-            <span className="health-indicator" data-ready={readyConnections > 0} />
+        </div>
+        <nav className="op-nav" aria-label="Pages">
+          {NAV_ITEMS.map((item) => (
+            <button
+              aria-current={page === item.page ? 'page' : undefined}
+              className="op-nav-button"
+              data-active={page === item.page}
+              key={item.page}
+              type="button"
+              onClick={() => setPage(item.page)}
+            >
+              <NavIcon page={item.page} />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="op-rail-foot" aria-live="polite">
+          <span
+            className="health-indicator"
+            data-ready={connections.length > 0 && readyConnections === connections.length}
+          />
+          <span className="op-rail-health">
+            {loadState.status === 'ready'
+              ? `${readyConnections} of ${connections.length} connections ready`
+              : 'Starting secure runtime…'}
+          </span>
+        </div>
+      </aside>
+      <main className="op-main" id="main-content" tabIndex={-1}>
+        {loadState.status === 'ready' && restorationVisible && restoredVersion !== undefined ? (
+          <div className="restoration-banner" role="status">
+            <span className="restoration-mark" aria-hidden="true" />
             <div>
-              <span className="sidebar-health-label">Runtime health</span>
-              <span className="sidebar-health-value">
-                {loadState.status === 'ready'
-                  ? `${readyConnections}/${connections.length} providers ready`
-                  : loadState.status}
-              </span>
+              <strong>Session restored</strong>
+              <span>Voice, OBS, Twitch and cloud state were reconstructed.</span>
             </div>
+            <Button size="compact" variant="ghost" onClick={() => setRestorationVisible(false)}>
+              Dismiss
+            </Button>
           </div>
-        </aside>
-        <main className="workspace-main" id="main-content" tabIndex={-1}>
-          <div className="app-frame">
-            <header className="topbar">
-              <div>
-                <p className="eyebrow">Production command center</p>
-                <h1>ObscurPilot</h1>
-                <p className="subtitle">
-                  One protected surface for voice, OBS truth, Twitch transport and cloud identity.
+        ) : null}
+
+        {loadState.status === 'loading' ? (
+          <Card aria-label="Loading secure runtime">
+            <CardContent className="loading-skeletons">
+              <Skeleton className="skeleton-title" />
+              <Skeleton className="skeleton-copy" />
+              <Skeleton className="skeleton-panel" />
+              <span className="sr-only">Loading secure runtime</span>
+            </CardContent>
+          </Card>
+        ) : null}
+        {loadState.status === 'error' ? (
+          <Card className="runtime-error" role="alert">
+            <CardContent>
+              <h2 className="font-medium text-red-200">The runtime is unavailable</h2>
+              <p className="mt-2 text-sm text-red-200/70">{loadState.message}</p>
+              <Button className="mt-4" variant="secondary" onClick={() => void refreshRuntime()}>
+                Try again
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {speechFallback === undefined ? null : (
+          <div className="speech-fallback" role="status" aria-live="polite">
+            <strong>Voice feedback unavailable</strong>
+            <span>{speechFallback}</span>
+            <Button size="compact" variant="ghost" onClick={() => setSpeechFallback(undefined)}>
+              Dismiss
+            </Button>
+          </div>
+        )}
+
+        {loadState.status === 'ready' ? (
+          page === 'home' ? (
+            <HomePage
+              activities={activities}
+              connections={connections}
+              obs={obsProjection}
+              twitch={twitchProjection}
+              onAgentActivity={handleAgentActivity}
+              onNavigate={setPage}
+            />
+          ) : page === 'connections' ? (
+            <div className="op-page">
+              <header className="op-page-head">
+                <h1>Connections</h1>
+                <p>
+                  Everything the copilot talks to. Local control keeps working even when cloud
+                  services degrade.
                 </p>
-              </div>
-              <div className="topbar-status">
-                <span className="topbar-status-label">Production control board</span>
-                <Badge tone="ready">Stage 11.1 · Hands-free ready</Badge>
-              </div>
-            </header>
-
-            {loadState.status === 'ready' ? (
-              <section className="runtime-ribbon" aria-label="Provider readiness">
-                <div className="runtime-ribbon-summary">
-                  <span className="runtime-ribbon-kicker">System state</span>
-                  <strong>{loadState.snapshot.lifecycle.replace('_', ' ')}</strong>
-                </div>
-                <div className="runtime-ribbon-providers">
-                  {connections.map((connection) => (
-                    <span
-                      className="runtime-provider"
-                      data-phase={connection.phase}
-                      key={connection.provider}
-                    >
-                      <span className="runtime-provider-dot" aria-hidden="true" />
-                      {connection.provider}
-                      <span>{connection.phase.replace('_', ' ')}</span>
-                    </span>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            {loadState.status === 'ready' && restorationVisible && restoredVersion !== undefined ? (
-              <div className="restoration-banner" role="status">
-                <span className="restoration-mark" aria-hidden="true" />
-                <div>
-                  <strong>Authoritative state restored</strong>
-                  <span>
-                    Snapshot {restoredVersion} reconstructed voice, OBS, Twitch and cloud surfaces.
-                  </span>
-                </div>
-                <Button size="compact" variant="ghost" onClick={() => setRestorationVisible(false)}>
-                  Dismiss
-                </Button>
-              </div>
-            ) : null}
-
-            {loadState.status === 'loading' ? (
-              <Card aria-label="Loading secure runtime">
-                <CardContent className="loading-skeletons">
-                  <Skeleton className="skeleton-title" />
-                  <Skeleton className="skeleton-copy" />
-                  <Skeleton className="skeleton-panel" />
-                  <span className="sr-only">Loading secure runtime</span>
-                </CardContent>
-              </Card>
-            ) : null}
-            {loadState.status === 'error' ? (
-              <Card className="runtime-error" role="alert">
-                <CardContent>
-                  <h2 className="font-medium text-red-200">Runtime projection unavailable</h2>
-                  <p className="mt-2 text-sm text-red-200/70">{loadState.message}</p>
-                  <Button
-                    className="mt-4"
-                    variant="secondary"
-                    onClick={() => void refreshRuntime()}
-                  >
-                    Retry secure runtime
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : null}
-
-            {speechFallback === undefined ? null : (
-              <div className="speech-fallback" role="status" aria-live="polite">
-                <strong>Voice feedback unavailable</strong>
-                <span>{speechFallback}</span>
-                <Button size="compact" variant="ghost" onClick={() => setSpeechFallback(undefined)}>
-                  Dismiss
-                </Button>
-              </div>
-            )}
-
-            {loadState.status === 'ready' ? (
-              <div className="dashboard-grid">
-                <VoicePresence onAgentActivity={handleAgentActivity} />
+              </header>
+              <div className="op-connect-grid">
                 <ObsMirror
                   projection={obsProjection}
                   phase={loadState.snapshot.connections.obs.phase}
                   onReconnect={() => void window.obscurPilot.reconnectObs()}
                 />
-                <LiveSessionConsole obs={obsProjection} />
-                <Card className="span-full" id="connections">
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <h2 className="panel-title">Connection supervisors</h2>
-                      <Badge tone={loadState.snapshot.lifecycle === 'ready' ? 'ready' : 'waiting'}>
-                        {loadState.snapshot.lifecycle}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="connection-grid">
-                    {Object.values(loadState.snapshot.connections).map((connection) => (
-                      <ConnectionStatus connection={connection} key={connection.provider} />
-                    ))}
-                  </CardContent>
-                </Card>
-                <CloudAccess projection={cloudProjection} onProjection={setCloudProjection} />
-                <Card className="span-full" id="twitch-integration">
+                <Card id="twitch-integration">
                   <CardHeader>
                     <div className="flex items-center justify-between gap-4">
                       <div>
-                        <p className="eyebrow">Remote event transport</p>
-                        <h2 className="panel-title">Twitch connection</h2>
+                        <p className="eyebrow">Chat, events and moderation</p>
+                        <h2 className="panel-title">Twitch</h2>
                       </div>
                       <Badge tone={twitchProjection?.phase === 'connected' ? 'ready' : 'neutral'}>
                         {twitchProjection?.phase.replace('_', ' ') ?? 'unavailable'}
@@ -811,47 +814,82 @@ export function App() {
                         {twitchNotice}
                       </p>
                     ) : null}
-                    <div className="transport-note">
-                      <strong>EventSub activity is live</strong>
-                      <span>
-                        Bounded Twitch events are normalized, deduplicated and routed into the
-                        virtualized activity timeline.
-                      </span>
-                    </div>
                   </CardContent>
                 </Card>
-                <ActivityTimeline activities={activities} />
-                <RecoveryCenter connections={connections} onAction={handleRecoveryAction} />
-                <ControlSettings
-                  preferences={preferences}
-                  onChange={updatePreferences}
-                  onReset={resetPreferences}
-                  onTestSpeech={testSpeech}
-                />
-                <Card className="span-full" id="configuration">
+                <CloudAccess projection={cloudProjection} onProjection={setCloudProjection} />
+                <Card id="configuration">
                   <CardHeader>
-                    <h2 className="panel-title">Provider configuration</h2>
+                    <h2 className="panel-title">Provider keys</h2>
                   </CardHeader>
                   <CardContent className="configuration-grid">
                     <ConfigurationStatus
                       configured={loadState.bootstrap.configuration.groqConfigured}
-                      label="Groq"
+                      label="Groq voice engine"
                     />
                     <ConfigurationStatus
                       configured={loadState.bootstrap.configuration.supabaseConfigured}
-                      label="Supabase"
+                      label="Supabase cloud"
                     />
                     <ConfigurationStatus
                       configured={loadState.bootstrap.configuration.twitchConfigured}
-                      label="Twitch"
+                      label="Twitch app"
                     />
                   </CardContent>
                 </Card>
               </div>
-            ) : null}
-          </div>
-        </main>
-      </div>
+              <Card className="span-full" id="connections">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <h2 className="panel-title">Connection supervisors</h2>
+                    <Badge tone={loadState.snapshot.lifecycle === 'ready' ? 'ready' : 'waiting'}>
+                      {loadState.snapshot.lifecycle}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="connection-grid">
+                  {Object.values(loadState.snapshot.connections).map((connection) => (
+                    <ConnectionStatus connection={connection} key={connection.provider} />
+                  ))}
+                </CardContent>
+              </Card>
+              <RecoveryCenter connections={connections} onAction={handleRecoveryAction} />
+            </div>
+          ) : page === 'shortcuts' ? (
+            <ShortcutsPage />
+          ) : page === 'live' ? (
+            <div className="op-page">
+              <header className="op-page-head">
+                <h1>Live session</h1>
+                <p>
+                  Prepare, rehearse and go live. Nothing starts without your explicit approval.
+                </p>
+              </header>
+              <LiveSessionConsole obs={obsProjection} />
+            </div>
+          ) : page === 'activity' ? (
+            <div className="op-page">
+              <header className="op-page-head">
+                <h1>Activity</h1>
+                <p>Everything the copilot heard, did and observed — newest first.</p>
+              </header>
+              <ActivityTimeline activities={activities} />
+            </div>
+          ) : (
+            <div className="op-page">
+              <header className="op-page-head">
+                <h1>Settings</h1>
+                <p>Motion, spoken feedback and interface preferences.</p>
+              </header>
+              <ControlSettings
+                preferences={preferences}
+                onChange={updatePreferences}
+                onReset={resetPreferences}
+                onTestSpeech={testSpeech}
+              />
+            </div>
+          )
+        ) : null}
+      </main>
     </div>
   );
 }

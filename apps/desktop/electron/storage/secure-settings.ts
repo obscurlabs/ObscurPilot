@@ -3,7 +3,11 @@ import { dirname } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { safeStorage } from 'electron';
 import { z } from 'zod';
-import { HandsFreePreferencesSchema } from '@obscurpilot/contracts/audio';
+import {
+  DEFAULT_SHORTCUT_BINDINGS,
+  HandsFreePreferencesSchema,
+  ShortcutBindingsSchema,
+} from '@obscurpilot/contracts/audio';
 import {
   LiveSessionProfileV1Schema,
   PilotOverlayPreferencesSchema,
@@ -11,10 +15,11 @@ import {
 
 const SettingsSchema = z
   .object({
-    accelerator: z.string().min(1).max(64).default('CommandOrControl+Shift+Space'),
+    accelerator: z.string().min(1).max(64).default('Alt+X'),
+    shortcuts: ShortcutBindingsSchema.default(DEFAULT_SHORTCUT_BINDINGS),
     audioDeviceId: z.string().min(1).max(512).default('default'),
     handsFree: HandsFreePreferencesSchema.default({
-      enabled: true,
+      enabled: false,
       wakePhrase: 'Hi Obscur',
       speechThreshold: 0.018,
       silenceReleaseMs: 850,

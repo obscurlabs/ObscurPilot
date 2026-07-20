@@ -17,7 +17,7 @@ const INITIAL_AGENT: AgentInteractionProjection = {
 };
 
 const LABELS: Record<PttProjection['phase'], string> = {
-  idle: 'Hold to speak',
+  idle: 'Hold Alt+X to speak',
   arming: 'Opening microphone',
   capturing: 'Listening',
   encoding: 'Preparing voice',
@@ -27,7 +27,7 @@ const LABELS: Record<PttProjection['phase'], string> = {
 };
 
 const AGENT_LABELS: Record<AgentInteractionProjection['phase'], string> = {
-  idle: 'Hold to speak',
+  idle: 'Hold Alt+X to speak',
   transcribing: 'Understanding voice',
   reasoning: 'Planning safely',
   tool_active: 'Applying command',

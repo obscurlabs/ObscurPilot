@@ -13,7 +13,8 @@ import {
   PttChangedEventSchema,
   PttCommandPayloadSchema,
   SelectAudioDevicePayloadSchema,
-  SetPttAcceleratorPayloadSchema,
+  ShortcutBindingsSchema,
+  type ShortcutBindings,
   type PttProjection,
   type HandsFreePreferences,
   type HandsFreeProjection,
@@ -139,12 +140,14 @@ export function createRendererApi(ipc: RendererIpc): Readonly<ObscurPilotRendere
         PttCommandPayloadSchema.parse({ action }),
         OperationAcceptedSchema,
       ),
-    setPttAccelerator: (accelerator: string) =>
+    getShortcuts: () =>
+      invoke(ipc, IPC_CHANNELS.shortcutsGet, EmptyPayloadSchema.parse({}), ShortcutBindingsSchema),
+    setShortcuts: (bindings: ShortcutBindings) =>
       invoke(
         ipc,
-        IPC_CHANNELS.pttSetAccelerator,
-        SetPttAcceleratorPayloadSchema.parse({ accelerator }),
-        OperationAcceptedSchema,
+        IPC_CHANNELS.shortcutsSet,
+        ShortcutBindingsSchema.parse(bindings),
+        ShortcutBindingsSchema,
       ),
     listAudioDevices: () =>
       invoke(
