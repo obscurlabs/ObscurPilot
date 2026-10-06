@@ -52,8 +52,8 @@ apps/desktop          Electron desktop app
   src/                Renderer — components/ui/ holds the reusable component library
 packages/contracts    Shared schemas and types — the system's single source of language
 packages/domain       Pure domain logic: state machines, safety policy, orchestration
-packages/adapters     All platform integrations behind one package: /groq, /obs,
-                      /supabase, /twitch subpath exports
+packages/adapters     All platform integrations behind one package: /wispr, /groq,
+                      /obs, /supabase, /twitch subpath exports
 docs/                 Documentation, ADRs, stage records, and the design system
 scripts/              Startup security check and verification scripts
 supabase/             Database migrations and edge functions
@@ -67,7 +67,7 @@ check into a single command.
 
 - Electron + React + TypeScript + Vite
 - Tailwind CSS + shadcn/ui
-- Groq `whisper-large-v3-turbo` for push-to-talk transcription
+- [Wispr Flow API](https://api-docs.wisprflow.ai/) for all voice transcription (push-to-talk and hands-free)
 - Groq `openai/gpt-oss-120b` or `qwen/qwen3.6-27b` for tool-oriented reasoning
 - Web Speech API for local spoken feedback
 - `obs-websocket-js` for local OBS JSON-RPC on port 4455

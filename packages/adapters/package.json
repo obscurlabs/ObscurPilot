@@ -8,6 +8,10 @@
       "types": "./dist/groq/boundary.d.ts",
       "import": "./dist/groq/boundary.js"
     },
+    "./wispr": {
+      "types": "./dist/wispr/boundary.d.ts",
+      "import": "./dist/wispr/boundary.js"
+    },
     "./obs": {
       "types": "./dist/obs/boundary.d.ts",
       "import": "./dist/obs/boundary.js"

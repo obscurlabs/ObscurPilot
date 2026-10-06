@@ -3,14 +3,6 @@ export const GROQ_ADAPTER_PACKAGE = '@obscurpilot/adapters/groq' as const;
 export { createGroqClient, type GroqClientOptions } from './client.js';
 export { GroqAdapterError, translateGroqError, type GroqFaultCode } from './errors.js';
 export {
-  GroqTranscriptionAdapter,
-  createSdkTranscriptionTransport,
-  normalizeTranscript,
-  type GroqTranscriptionAdapterOptions,
-  type TranscriptionResult,
-  type TranscriptionTransport,
-} from './transcription.js';
-export {
   GroqReasoningAdapter,
   createSdkReasoningTransport,
   type GroqReasoningAdapterOptions,

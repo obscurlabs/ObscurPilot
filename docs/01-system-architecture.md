@@ -85,7 +85,7 @@ Use npm workspaces with one lockfile. Package dependency direction is `desktop -
 1. Main registers a user-configurable global push-to-talk accelerator and publishes readiness.
 2. Press creates an `audioSessionId`, starts a bounded PCM capture/ring buffer, and signals `capturing`.
 3. Release atomically stops capture. Audio shorter than the configured minimum is rejected locally; audio exceeding maximum duration is truncated and reported.
-4. The Groq adapter uploads a supported encoded audio blob to `whisper-large-v3-turbo`, with an abort signal and request deadline.
+4. The Wispr Flow adapter uploads the 16 kHz WAV clip (base64) to the Flow transcription API, with a dictionary of live OBS names and the wake phrase, an abort signal, and a request deadline.
 5. The transcript is normalized but preserved for audit according to user privacy settings.
 6. The orchestrator receives a system policy, current redacted state snapshot, transcript, and versioned tool schemas through an OpenAI-compatible request.
 7. The model may propose tools but never executes them. The Tool Gateway validates schema, permission, resource existence, current state, risk level, rate limits, and idempotency key.

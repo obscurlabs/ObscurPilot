@@ -11,7 +11,7 @@ interface MainState {
   readonly connections: Readonly<Record<ConnectionProvider, ConnectionProjection>>;
 }
 
-const PROVIDERS: readonly ConnectionProvider[] = ['obs', 'twitch', 'groq', 'supabase'];
+const PROVIDERS: readonly ConnectionProvider[] = ['obs', 'twitch', 'wispr', 'groq', 'supabase'];
 const INITIAL_CORRELATION_ID = '00000000-0000-4000-8000-000000000000';
 
 function initialConnection(provider: ConnectionProvider): ConnectionProjection {

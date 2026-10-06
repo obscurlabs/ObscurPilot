@@ -2,7 +2,7 @@ import type { AgentInteractionProjection } from '@obscurpilot/contracts/agent';
 import type { AppSnapshot, ConnectionProjection } from '@obscurpilot/contracts/state';
 import type { TwitchActivity } from '@obscurpilot/contracts/twitch';
 
-export const MAX_ACTIVITY_EVENTS = 10_000;
+const MAX_ACTIVITY_EVENTS = 10_000;
 export const ACTIVITY_PAGE_SIZE = 100;
 
 export type ActivitySource = 'agent' | 'obs' | 'system' | 'twitch';
@@ -24,7 +24,7 @@ export interface ActivityFilters {
   readonly severity: ActivitySeverity | 'all';
 }
 
-export interface VirtualWindow {
+interface VirtualWindow {
   readonly startIndex: number;
   readonly endIndex: number;
   readonly offsetTop: number;
@@ -38,7 +38,7 @@ const ATTENTION_PHASES = new Set<ConnectionProjection['phase']>([
   'reconnecting',
 ]);
 
-export function severityForConnection(connection: ConnectionProjection): ActivitySeverity {
+function severityForConnection(connection: ConnectionProjection): ActivitySeverity {
   if (connection.phase === 'ready') return 'success';
   if (connection.phase === 'stopped') return 'error';
   if (ATTENTION_PHASES.has(connection.phase)) return 'warning';

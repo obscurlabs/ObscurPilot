@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { createEventEnvelopeSchema, createRequestEnvelopeSchema } from './ipc.js';
 
-export const ConnectionProviderSchema = z.enum(['obs', 'twitch', 'groq', 'supabase']);
+export const ConnectionProviderSchema = z.enum(['obs', 'twitch', 'wispr', 'groq', 'supabase']);
 export type ConnectionProvider = z.infer<typeof ConnectionProviderSchema>;
 
 export const ConnectionPhaseSchema = z.enum([

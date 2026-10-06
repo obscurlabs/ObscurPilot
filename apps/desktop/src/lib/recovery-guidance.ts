@@ -1,4 +1,3 @@
-import { PUBLIC_ERROR_CODES, type PublicErrorCode } from '@obscurpilot/contracts/errors';
 import type { ConnectionProjection } from '@obscurpilot/contracts/state';
 
 export type RecoveryAction =
@@ -9,82 +8,6 @@ export interface RecoveryGuidance {
   readonly description: string;
   readonly action: RecoveryAction;
   readonly actionLabel?: string;
-}
-
-export const PUBLIC_ERROR_GUIDANCE: Record<PublicErrorCode, RecoveryGuidance> = {
-  VALIDATION_FAILED: {
-    title: 'Request needs correction',
-    description: 'Review the highlighted values and submit the request again.',
-    action: 'review_settings',
-    actionLabel: 'Review settings',
-  },
-  AUTH_REQUIRED: {
-    title: 'Sign-in required',
-    description: 'Restore the creator session before retrying this operation.',
-    action: 'sign_in',
-    actionLabel: 'Open cloud access',
-  },
-  PERMISSION_DENIED: {
-    title: 'Permission unavailable',
-    description: 'Reconnect the provider and approve only the requested permission.',
-    action: 'review_settings',
-    actionLabel: 'Review connections',
-  },
-  RESOURCE_NOT_FOUND: {
-    title: 'Resource not found',
-    description: 'Refresh the authoritative provider state and verify the resource still exists.',
-    action: 'retry_runtime',
-    actionLabel: 'Refresh state',
-  },
-  PRECONDITION_FAILED: {
-    title: 'State changed before execution',
-    description: 'Refresh current state, review the updated plan, and try again.',
-    action: 'retry_runtime',
-    actionLabel: 'Refresh state',
-  },
-  RATE_LIMITED: {
-    title: 'Provider is rate limiting requests',
-    description: 'Wait for the supervised backoff to finish before retrying.',
-    action: 'none',
-  },
-  UPSTREAM_UNAVAILABLE: {
-    title: 'Provider temporarily unavailable',
-    description: 'Keep the application open while the connection supervisor recovers.',
-    action: 'retry_runtime',
-    actionLabel: 'Retry now',
-  },
-  TIMEOUT: {
-    title: 'Provider response timed out',
-    description: 'Refresh authoritative state before deciding whether to retry.',
-    action: 'retry_runtime',
-    actionLabel: 'Refresh state',
-  },
-  CONFLICT: {
-    title: 'A newer operation is already active',
-    description: 'Wait for the active operation to finish, then refresh state.',
-    action: 'retry_runtime',
-    actionLabel: 'Refresh state',
-  },
-  CANCELLED: {
-    title: 'Operation cancelled safely',
-    description: 'No further action is required. Start a new command when ready.',
-    action: 'none',
-  },
-  POLICY_REJECTED: {
-    title: 'Safety policy stopped the request',
-    description: 'Revise the request without bypassing confirmation or permission boundaries.',
-    action: 'none',
-  },
-  INTERNAL: {
-    title: 'Runtime could not complete the request',
-    description: 'Refresh the runtime. If it repeats, retain the correlation ID for diagnostics.',
-    action: 'retry_runtime',
-    actionLabel: 'Refresh runtime',
-  },
-};
-
-export function guidanceForPublicError(code: PublicErrorCode): RecoveryGuidance {
-  return PUBLIC_ERROR_GUIDANCE[code];
 }
 
 export function guidanceForConnection(connection: ConnectionProjection): RecoveryGuidance | null {
@@ -108,6 +31,14 @@ export function guidanceForConnection(connection: ConnectionProjection): Recover
       actionLabel: 'Reconnect Twitch',
     };
   }
+  if (connection.provider === 'wispr' && connection.phase === 'auth_required') {
+    return {
+      title: 'Wispr Flow key needed',
+      description: 'Add your Wispr Flow API key to .env, then restart ObscurPilot to transcribe voice.',
+      action: 'review_settings',
+      actionLabel: 'Review provider keys',
+    };
+  }
   if (connection.provider === 'supabase' && connection.phase === 'auth_required') {
     return {
       title: 'Cloud session required',
@@ -121,8 +52,4 @@ export function guidanceForConnection(connection: ConnectionProjection): Recover
     description: `Current state: ${connection.reasonCode.replaceAll('_', ' ')}. Keep the application open while supervised recovery runs.`,
     action: 'none',
   };
-}
-
-export function hasCompletePublicErrorCatalog(): boolean {
-  return PUBLIC_ERROR_CODES.every((code) => PUBLIC_ERROR_GUIDANCE[code] !== undefined);
 }

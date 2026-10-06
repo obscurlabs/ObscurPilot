@@ -38,3 +38,18 @@ export type ObsProjection = z.infer<typeof ObsProjectionSchema>;
 
 export const GetObsSnapshotPayloadSchema = z.object({}).strict();
 export const ReconnectObsPayloadSchema = z.object({}).strict();
+
+/** One-click OBS setup: each step the assistant took, so the UI can show what happened. */
+export const ObsConnectStepSchema = z
+  .object({
+    label: z.string().min(1).max(80),
+    status: z.enum(['done', 'failed', 'skipped']),
+    detail: z.string().max(300).optional(),
+  })
+  .strict();
+export type ObsConnectStep = z.infer<typeof ObsConnectStepSchema>;
+
+export const ObsConnectResultSchema = z
+  .object({ connected: z.boolean(), steps: z.array(ObsConnectStepSchema).max(8) })
+  .strict();
+export type ObsConnectResult = z.infer<typeof ObsConnectResultSchema>;

@@ -1,7 +1,7 @@
 import type { AgentInteractionProjection } from '@obscurpilot/contracts/agent';
 import type { ConnectionProjection } from '@obscurpilot/contracts/state';
 
-export interface SpeechPreferences {
+interface SpeechPreferences {
   readonly enabled: boolean;
   readonly voiceUri: string;
   readonly volume: number;
@@ -15,7 +15,7 @@ interface SpeechEngineLike {
 
 type SpeechUtteranceFactory = (text: string) => SpeechSynthesisUtterance;
 
-export class SpeechFeedbackQueue {
+class SpeechFeedbackQueue {
   private readonly pending: Array<{ text: string; preferences: SpeechPreferences }> = [];
   private active = false;
 

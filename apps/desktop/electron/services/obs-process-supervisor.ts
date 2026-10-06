@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
+import { dirname, extname, isAbsolute } from 'node:path';
 import type { ObsSnapshot } from '@obscurpilot/contracts/obs';
 
 export interface ObsProcessSupervisorOptions {
@@ -43,17 +43,24 @@ export class ObsProcessSupervisor {
     if (existing !== undefined) return existing;
     const executable = this.options.executablePath;
     if (executable === undefined) throw new Error('OBS_EXECUTABLE_NOT_CONFIGURED');
-    if (!isAbsolute(executable) || !existsSync(executable))
+    // A .lnk shortcut cannot be spawned without a shell; point at obs64.exe itself.
+    const notExecutable = process.platform === 'win32' && extname(executable) !== '.exe';
+    if (!isAbsolute(executable) || notExecutable || !existsSync(executable))
       throw new Error('OBS_EXECUTABLE_INVALID');
     if (this.child === undefined || this.child.exitCode !== null) {
+      // OBS resolves locale and plugin data relative to its working directory and quits
+      // with "Failed to find locale/en-US.ini" when started from anywhere else.
       const child = this.spawnProcess(executable, [], {
+        cwd: dirname(executable),
         shell: false,
         windowsHide: false,
         stdio: 'ignore',
       });
-      child.once('exit', () => {
+      const forget = () => {
         if (this.child === child) this.child = undefined;
-      });
+      };
+      child.once('exit', forget);
+      child.once('error', forget);
       child.unref();
       this.child = child;
     }

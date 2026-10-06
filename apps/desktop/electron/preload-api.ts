@@ -33,9 +33,16 @@ import {
 import type { ObscurPilotRendererApi } from '@obscurpilot/contracts/renderer-api';
 import {
   GetObsSnapshotPayloadSchema,
+  ObsConnectResultSchema,
   ObsProjectionSchema,
   ReconnectObsPayloadSchema,
 } from '@obscurpilot/contracts/obs';
+import {
+  LogEntryEventSchema,
+  LogsEmptyPayloadSchema,
+  LogsProjectionSchema,
+  type LogEntry,
+} from '@obscurpilot/contracts/observability';
 import type { ZodType } from 'zod';
 import {
   CloudAuthProjectionSchema,
@@ -60,6 +67,7 @@ import {
   AgentEmptyPayloadSchema,
   AgentInteractionChangedEventSchema,
   AgentInteractionProjectionSchema,
+  AgentStartResultSchema,
   type AgentConfirmationDecisionPayload,
   type AgentInteractionProjection,
 } from '@obscurpilot/contracts/agent';
@@ -74,6 +82,9 @@ import {
   LiveSessionProjectionSchema,
   LiveSessionModeSchema,
   ModerationCommandPayloadSchema,
+  PilotOverlayAcceptedSchema,
+  PilotOverlayDragPayloadSchema,
+  PilotOverlayInteractivePayloadSchema,
   PilotOverlayPreferencesSchema,
   PrepareLiveSessionPayloadSchema,
   type ChatAnalysisProjection,
@@ -83,6 +94,7 @@ import {
   type LiveSessionProfileV1,
   type LiveSessionProjection,
   type ModerationIntentV1,
+  type PilotOverlayDragPayload,
   type PilotOverlayPreferences,
 } from '@obscurpilot/contracts/live-session';
 
@@ -253,6 +265,23 @@ export function createRendererApi(ipc: RendererIpc): Readonly<ObscurPilotRendere
         ReconnectObsPayloadSchema.parse({}),
         OperationAcceptedSchema,
       ),
+    connectObs: () =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.obsConnect,
+        ReconnectObsPayloadSchema.parse({}),
+        ObsConnectResultSchema,
+      ),
+    startPilot: () =>
+      invoke(ipc, IPC_CHANNELS.agentStart, AgentEmptyPayloadSchema.parse({}), AgentStartResultSchema),
+    stopPilot: () =>
+      invoke(ipc, IPC_CHANNELS.agentStop, AgentEmptyPayloadSchema.parse({}), AgentStartResultSchema),
+    getLogs: () =>
+      invoke(ipc, IPC_CHANNELS.logsGet, LogsEmptyPayloadSchema.parse({}), LogsProjectionSchema),
+    clearLogs: () =>
+      invoke(ipc, IPC_CHANNELS.logsClear, LogsEmptyPayloadSchema.parse({}), OperationAcceptedSchema),
+    onLogEntry: (listener: (entry: Readonly<LogEntry>) => void) =>
+      subscribe(ipc, IPC_CHANNELS.logEntry, LogEntryEventSchema, listener),
     getCloudAuth: () =>
       invoke(
         ipc,
@@ -414,6 +443,20 @@ export function createRendererApi(ipc: RendererIpc): Readonly<ObscurPilotRendere
         IPC_CHANNELS.pilotOverlaySetPreferences,
         PilotOverlayPreferencesSchema.parse(preferences),
         PilotOverlayPreferencesSchema,
+      ),
+    dragPilotOverlay: (phase: PilotOverlayDragPayload['phase']) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.pilotOverlayDrag,
+        PilotOverlayDragPayloadSchema.parse({ phase }),
+        PilotOverlayAcceptedSchema,
+      ),
+    setPilotOverlayInteractive: (interactive: boolean) =>
+      invoke(
+        ipc,
+        IPC_CHANNELS.pilotOverlaySetInteractive,
+        PilotOverlayInteractivePayloadSchema.parse({ interactive }),
+        PilotOverlayAcceptedSchema,
       ),
   });
 }

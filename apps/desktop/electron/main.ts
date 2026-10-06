@@ -20,9 +20,17 @@ import {
 import { IPC_CHANNELS } from '@obscurpilot/contracts/ipc';
 import {
   GetObsSnapshotPayloadSchema,
+  ObsConnectResultSchema,
   ObsProjectionSchema,
   ReconnectObsPayloadSchema,
+  type ObsConnectResult,
+  type ObsConnectStep,
 } from '@obscurpilot/contracts/obs';
+import {
+  LogEntryEventSchema,
+  LogsEmptyPayloadSchema,
+  LogsProjectionSchema,
+} from '@obscurpilot/contracts/observability';
 import {
   createObsProductionTools,
   ObsBridge,
@@ -32,6 +40,7 @@ import {
   AppSnapshotSchema,
   GetSnapshotPayloadSchema,
   StateChangedEventSchema,
+  type ConnectionProjection,
 } from '@obscurpilot/contracts/state';
 import {
   app,
@@ -63,15 +72,22 @@ import {
   isTrustedRendererUrl,
 } from './core/security.js';
 import { MainStateService } from './services/state-service.js';
+import { LogService } from './services/log-service.js';
+import {
+  enableObsWebSocket,
+  findObsExecutable,
+  isObsRunning,
+  obsWebSocketConfigPath,
+  readObsWebSocketSettings,
+} from './services/obs-setup.js';
 import { SecureSettingsStore } from './storage/secure-settings.js';
 import {
   createAudioCaptureWindow,
   createMainWindow,
   createMainWindowShell,
-  createPilotOverlayWindow,
-  applyPilotOverlayPreferences,
   loadMainWindow,
 } from './core/window-manager.js';
+import { createPilotOverlayWindow, PilotOverlayController } from './core/pilot-overlay.js';
 import {
   CloudAuthProjectionSchema,
   CloudConfirmationPayloadSchema,
@@ -95,15 +111,16 @@ import {
   AgentEmptyPayloadSchema,
   AgentInteractionChangedEventSchema,
   AgentInteractionProjectionSchema,
+  AgentStartResultSchema,
+  type AgentStartResult,
 } from '@obscurpilot/contracts/agent';
 import {
   createGroqClient,
   createSdkReasoningTransport,
-  createSdkTranscriptionTransport,
   GroqReasoningAdapter,
-  GroqTranscriptionAdapter,
   GuardedReasoningOrchestrator,
 } from '@obscurpilot/adapters/groq';
+import { WisprTranscriptionAdapter } from '@obscurpilot/adapters/wispr';
 import { VoiceOrchestrator } from './services/voice-orchestrator.js';
 import { HandsFreeConversation } from './services/hands-free-conversation.js';
 import { ToolRegistry } from '@obscurpilot/domain/tool-registry';
@@ -119,6 +136,9 @@ import {
   TwitchMetadataSchema,
   ModerationCommandPayloadSchema,
   ModerationIntentV1Schema,
+  PilotOverlayAcceptedSchema,
+  PilotOverlayDragPayloadSchema,
+  PilotOverlayInteractivePayloadSchema,
   PilotOverlayPreferencesSchema,
   PrepareLiveSessionPayloadSchema,
   type TwitchMetadata,
@@ -189,6 +209,37 @@ function getSupportedPlatform(): 'win32' | 'darwin' | 'linux' {
 async function startApplication(): Promise<void> {
   loadDevelopmentEnvironment(app.getAppPath(), app.isPackaged);
   const environment = parseEnvironment(process.env);
+  const logs = new LogService({
+    consoleLevel: environment.OBSCURPILOT_LOG_LEVEL,
+    secrets: [
+      environment.WISPR_FLOW_API_KEY,
+      environment.GROQ_API_KEY,
+      environment.OBS_WEBSOCKET_PASSWORD,
+      environment.SUPABASE_ANON_KEY,
+    ],
+    onEntry: (entry) => {
+      const envelope = LogEntryEventSchema.parse({
+        protocolVersion: 1,
+        eventId: randomUUID(),
+        emittedAt: new Date().toISOString(),
+        payload: entry,
+      });
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.logEntry, envelope);
+      }
+    },
+  });
+  logs.info('app', `ObscurPilot ${app.getVersion()} starting`, `Electron ${process.versions.electron}`);
+  logs.info(
+    'app',
+    'Provider keys',
+    [
+      `Wispr Flow ${environment.WISPR_FLOW_API_KEY === undefined ? 'missing' : 'set'}`,
+      `Groq ${environment.GROQ_API_KEY === undefined ? 'missing' : 'set'}`,
+      `Supabase ${environment.SUPABASE_URL === undefined ? 'missing' : 'set'}`,
+      `Twitch ${environment.TWITCH_CLIENT_ID === undefined ? 'missing' : 'set'}`,
+    ].join(', '),
+  );
   const useBuiltRenderer =
     app.isPackaged ||
     process.env.OBSCURPILOT_E2E === '1' ||
@@ -224,6 +275,7 @@ async function startApplication(): Promise<void> {
           node: process.versions.node,
         },
         configuration: {
+          wisprConfigured: environment.WISPR_FLOW_API_KEY !== undefined,
           groqConfigured: environment.GROQ_API_KEY !== undefined,
           supabaseConfigured:
             environment.SUPABASE_URL !== undefined && environment.SUPABASE_ANON_KEY !== undefined,
@@ -246,6 +298,10 @@ async function startApplication(): Promise<void> {
   );
   lifecycle.add(
     stateService.subscribe((event) => {
+      for (const patch of event.patches) {
+        if (patch.kind === 'connection') logConnection(logs, patch.value);
+        else logs.transition('app', `Lifecycle ${patch.value}`, 'LIFECYCLE');
+      }
       const envelope = StateChangedEventSchema.parse({
         protocolVersion: 1,
         eventId: randomUUID(),
@@ -266,6 +322,12 @@ async function startApplication(): Promise<void> {
   const handsFreeConversation = new HandsFreeConversation(
     persistedSettings.handsFree,
     (projection) => {
+      logs.transition(
+        'hands-free',
+        `Hands-free ${projection.phase.replaceAll('_', ' ')}`,
+        projection.reasonCode,
+        projection.phase === 'error' ? 'error' : 'info',
+      );
       const envelope = HandsFreeChangedEventSchema.parse({
         protocolVersion: 1,
         eventId: randomUUID(),
@@ -284,27 +346,57 @@ async function startApplication(): Promise<void> {
       }
     },
   );
-  const pilotOverlayWindow = await createPilotOverlayWindow(
-    isDevelopment,
-    developmentServerUrl,
+  const pilotOverlayWindow = await createPilotOverlayWindow(isDevelopment, developmentServerUrl);
+  const pilotOverlay = new PilotOverlayController(
+    pilotOverlayWindow,
     persistedSettings.pilotOverlay,
+    (pilotOverlayPreferences) => settings.update({ pilotOverlay: pilotOverlayPreferences }),
   );
   lifecycle.add(() => {
+    pilotOverlay.dispose();
     if (!pilotOverlayWindow.isDestroyed()) pilotOverlayWindow.destroy();
   });
   const groqClient =
     environment.GROQ_API_KEY === undefined
       ? undefined
       : createGroqClient({ apiKey: environment.GROQ_API_KEY });
+  const wisprApiKey = environment.WISPR_FLOW_API_KEY;
   const voiceOrchestrator =
-    groqClient === undefined
+    wisprApiKey === undefined
       ? undefined
       : new VoiceOrchestrator({
-          transcription: new GroqTranscriptionAdapter({
-            model: environment.GROQ_STT_MODEL,
-            transport: createSdkTranscriptionTransport(groqClient),
+          transcription: new WisprTranscriptionAdapter({
+            apiKey: wisprApiKey,
+            onEvent: (event) =>
+              logs.write(
+                event.level,
+                'wispr',
+                event.event === 'wispr.transcription.started'
+                  ? 'Transcribing with Wispr Flow'
+                  : `Transcription ${event.outcome ?? 'finished'}`,
+                event.durationMs === undefined ? undefined : `${event.durationMs} ms`,
+              ),
+            // Flow spells these right instead of guessing: the wake phrase and live OBS names.
+            dictionary: () => {
+              const obs = obsBridge.snapshot();
+              return [
+                'ObscurPilot',
+                'Obscur',
+                'OBS',
+                'Twitch',
+                settings.snapshot().handsFree.wakePhrase,
+                ...(obs?.scenes.map((scene) => scene.name) ?? []),
+                ...(obs?.inputs.map((input) => input.name) ?? []),
+              ];
+            },
           }),
           onProjection: (projection) => {
+            logs.transition(
+              'agent',
+              `Agent ${projection.phase.replaceAll('_', ' ')}`,
+              projection.reasonCode,
+              projection.phase === 'error' ? 'error' : 'info',
+            );
             handsFreeConversation.syncAgent(projection);
             const envelope = AgentInteractionChangedEventSchema.parse({
               protocolVersion: 1,
@@ -320,24 +412,20 @@ async function startApplication(): Promise<void> {
           },
           onConnection: (projection) => stateService.setConnection(projection),
         });
-  if (voiceOrchestrator === undefined) {
+  for (const [provider, configured] of [
+    ['wispr', voiceOrchestrator !== undefined],
+    ['groq', groqClient !== undefined],
+  ] as const) {
     stateService.setConnection({
-      provider: 'groq',
+      provider,
       phase: 'idle',
       attempt: 0,
       changedAt: new Date().toISOString(),
-      reasonCode: 'NOT_CONFIGURED',
+      reasonCode: configured ? 'CONFIGURED' : 'NOT_CONFIGURED',
       correlationId: randomUUID(),
     });
-  } else {
-    stateService.setConnection({
-      provider: 'groq',
-      phase: 'idle',
-      attempt: 0,
-      changedAt: new Date().toISOString(),
-      reasonCode: 'CONFIGURED',
-      correlationId: randomUUID(),
-    });
+  }
+  if (voiceOrchestrator !== undefined) {
     lifecycle.add(() => voiceOrchestrator.dispose());
   }
   const activeAudioService = new PttAudioService(
@@ -345,6 +433,13 @@ async function startApplication(): Promise<void> {
     captureWindow,
     settings,
     (envelope) => {
+      const { phase, reasonCode } = envelope.payload;
+      logs.transition(
+        'voice',
+        `Capture ${phase}`,
+        reasonCode,
+        phase === 'error' || phase === 'rejected' ? 'warn' : 'debug',
+      );
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed() && window.id !== captureWindow.id) {
           window.webContents.send(IPC_CHANNELS.pttChanged, envelope);
@@ -358,18 +453,42 @@ async function startApplication(): Promise<void> {
   await activeAudioService.start();
   lifecycle.add(() => activeAudioService.dispose());
 
+  // OBS's own WebSocket settings on this machine win over .env, so no password copying.
+  const obsSettingsPath = obsWebSocketConfigPath(app.getPath('appData'));
+  let lastObsFailure: string | undefined;
   const obsBridge = new ObsBridge({
-    url: environment.OBS_WEBSOCKET_URL,
-    ...(environment.OBS_WEBSOCKET_PASSWORD === undefined
-      ? {}
-      : { password: environment.OBS_WEBSOCKET_PASSWORD }),
+    credentials: () => {
+      const local = readObsWebSocketSettings(obsSettingsPath);
+      if (local !== undefined) {
+        return {
+          url: `ws://127.0.0.1:${local.port}`,
+          ...(local.password === undefined ? {} : { password: local.password }),
+        };
+      }
+      return {
+        url: environment.OBS_WEBSOCKET_URL,
+        ...(environment.OBS_WEBSOCKET_PASSWORD === undefined
+          ? {}
+          : { password: environment.OBS_WEBSOCKET_PASSWORD }),
+      };
+    },
     onConnection: (projection) => stateService.setConnection(projection),
+    onFailure: (reasonCode, cause) => {
+      // Backoff retries repeat the same cause; only the first occurrence is worth a warning.
+      const level = cause === lastObsFailure ? 'debug' : 'warn';
+      logs.write(level, 'obs', obsFailureHint(reasonCode), cause);
+      lastObsFailure = cause;
+    },
   });
   lifecycle.add(() => obsBridge.dispose());
+  const obsExecutable = findObsExecutable(environment.OBS_EXECUTABLE_PATH);
+  logs.info(
+    'obs',
+    obsExecutable === undefined ? 'OBS Studio not found on this PC' : 'OBS Studio found',
+    obsExecutable ?? 'Install OBS Studio or set its path in .env',
+  );
   const obsProcessSupervisor = new ObsProcessSupervisor({
-    ...(environment.OBS_EXECUTABLE_PATH === undefined
-      ? {}
-      : { executablePath: environment.OBS_EXECUTABLE_PATH }),
+    ...(obsExecutable === undefined ? {} : { executablePath: obsExecutable }),
     getSnapshot: () => obsBridge.snapshot(),
     reconnect: () => obsBridge.reconnect(),
   });
@@ -663,6 +782,12 @@ async function startApplication(): Promise<void> {
     obs: obsSessionPort,
     twitch: twitchSessionPort,
     onProjection: (projection) => {
+      logs.transition(
+        'live',
+        `Live session ${projection.phase.replaceAll('_', ' ')}`,
+        projection.reasonCode,
+        projection.phase === 'failed' ? 'error' : 'info',
+      );
       const envelope = LiveSessionChangedEventSchema.parse({
         protocolVersion: 1,
         eventId: randomUUID(),
@@ -735,8 +860,9 @@ async function startApplication(): Promise<void> {
   try {
     shortcutService.setBindings(settings.snapshot().shortcuts);
   } catch (error: unknown) {
-    console.warn(
-      'Stored shortcuts are unusable, falling back to defaults:',
+    logs.warn(
+      'shortcuts',
+      'Stored shortcuts are unusable, falling back to defaults',
       error instanceof Error ? error.message : 'unknown reason',
     );
     shortcutService.setBindings(DEFAULT_SHORTCUT_BINDINGS);
@@ -1472,9 +1598,10 @@ async function startApplication(): Promise<void> {
       resultSchema: AgentInteractionProjectionSchema,
       isTrustedSender: trustedSender,
       handler: () =>
+        // No Wispr Flow key means no voice agent yet: that is setup, not a failure.
         voiceOrchestrator?.snapshot() ?? {
-          phase: 'error' as const,
-          reasonCode: 'NOT_CONFIGURED',
+          phase: 'idle' as const,
+          reasonCode: 'VOICE_NOT_CONFIGURED',
           elapsedMs: 0,
         },
     }),
@@ -1636,8 +1763,35 @@ async function startApplication(): Promise<void> {
       isTrustedSender: trustedSender,
       handler: async ({ payload }) => {
         await settings.update({ pilotOverlay: payload });
-        applyPilotOverlayPreferences(pilotOverlayWindow, payload);
+        pilotOverlay.apply(payload);
         return payload;
+      },
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.pilotOverlayDrag,
+      payloadSchema: PilotOverlayDragPayloadSchema,
+      resultSchema: PilotOverlayAcceptedSchema,
+      isTrustedSender: trustedSender,
+      handler: async ({ payload }) => {
+        if (payload.phase === 'start') pilotOverlay.beginDrag();
+        else await pilotOverlay.endDrag();
+        return { accepted: true as const };
+      },
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.pilotOverlaySetInteractive,
+      payloadSchema: PilotOverlayInteractivePayloadSchema,
+      resultSchema: PilotOverlayAcceptedSchema,
+      isTrustedSender: trustedSender,
+      handler: ({ payload }) => {
+        pilotOverlay.setInteractive(payload.interactive);
+        return { accepted: true as const };
       },
     }),
   );
@@ -1715,11 +1869,157 @@ async function startApplication(): Promise<void> {
       resultSchema: OperationAcceptedSchema,
       isTrustedSender: trustedSender,
       handler: async () => {
+        logs.info('obs', 'Reconnect requested');
         await obsBridge.reconnect();
         return { accepted: true as const };
       },
     }),
   );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.obsConnect,
+      payloadSchema: ReconnectObsPayloadSchema,
+      resultSchema: ObsConnectResultSchema,
+      isTrustedSender: trustedSender,
+      handler: () => connectObs(),
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.agentStart,
+      payloadSchema: AgentEmptyPayloadSchema,
+      resultSchema: AgentStartResultSchema,
+      isTrustedSender: trustedSender,
+      handler: () => startPilot(),
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.agentStop,
+      payloadSchema: AgentEmptyPayloadSchema,
+      resultSchema: AgentStartResultSchema,
+      isTrustedSender: trustedSender,
+      handler: async () => {
+        const preferences = { ...settings.snapshot().handsFree, enabled: false };
+        await activeAudioService.setHandsFreePreferences(preferences);
+        handsFreeConversation.setPreferences(preferences);
+        logs.info('agent', 'Pilot voice turned off');
+        return { running: false, steps: [{ label: 'Turn off voice', status: 'done' as const }] };
+      },
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.logsGet,
+      payloadSchema: LogsEmptyPayloadSchema,
+      resultSchema: LogsProjectionSchema,
+      isTrustedSender: trustedSender,
+      handler: () => ({ entries: logs.snapshot() }),
+    }),
+  );
+  lifecycle.add(
+    registerSecureHandler({
+      ipcMain,
+      channel: IPC_CHANNELS.logsClear,
+      payloadSchema: LogsEmptyPayloadSchema,
+      resultSchema: OperationAcceptedSchema,
+      isTrustedSender: trustedSender,
+      handler: () => {
+        logs.clear();
+        return { accepted: true as const };
+      },
+    }),
+  );
+
+  /** One click to get going: show Pilot, connect OBS, and turn on hands-free voice. */
+  async function startPilot(): Promise<AgentStartResult> {
+    const steps: ObsConnectStep[] = [];
+    const step = (label: string, status: ObsConnectStep['status'], detail?: string) => {
+      steps.push({ label, status, ...(detail === undefined ? {} : { detail }) });
+      logs.write(status === 'failed' ? 'warn' : 'info', 'agent', `${label}: ${status}`, detail);
+    };
+    logs.info('agent', 'Start Pilot requested');
+
+    const overlay = { ...settings.snapshot().pilotOverlay, visible: true };
+    await settings.update({ pilotOverlay: overlay });
+    pilotOverlay.apply(overlay);
+    step('Show Pilot', 'done');
+
+    const obs = await connectObs();
+    const obsFailure = obs.steps.find((item) => item.status === 'failed');
+    step('Connect OBS', obs.connected ? 'done' : 'failed', obs.connected ? undefined : obsFailure?.detail);
+
+    if (voiceOrchestrator === undefined) {
+      step('Turn on voice', 'failed', 'Add your Wispr Flow API key to .env, then restart ObscurPilot.');
+    } else {
+      const preferences = { ...settings.snapshot().handsFree, enabled: true };
+      await activeAudioService.setHandsFreePreferences(preferences);
+      handsFreeConversation.setPreferences(preferences);
+      step('Turn on voice', 'done', `Say "${preferences.wakePhrase}", or hold the push-to-talk key`);
+    }
+
+    if (groqClient === undefined) {
+      step('Command brain', 'failed', 'Add your Groq API key to .env so Pilot can act on commands.');
+    } else {
+      step('Command brain', 'done', 'Groq reasoning ready');
+    }
+    return { running: steps.every((item) => item.status !== 'failed'), steps };
+  }
+
+  /** One click: find OBS, switch its WebSocket server on, launch it, and connect. */
+  async function connectObs(): Promise<ObsConnectResult> {
+    const steps: ObsConnectStep[] = [];
+    const step = (label: string, status: ObsConnectStep['status'], detail?: string) => {
+      steps.push({ label, status, ...(detail === undefined ? {} : { detail }) });
+      logs.write(status === 'failed' ? 'warn' : 'info', 'obs', `${label}: ${status}`, detail);
+    };
+    const finish = (): ObsConnectResult => ({
+      connected: obsBridge.snapshot() !== undefined,
+      steps,
+    });
+    logs.info('obs', 'Connect OBS requested');
+    if (obsBridge.snapshot() !== undefined) {
+      step('Connect to OBS', 'done', 'Already connected');
+      return finish();
+    }
+    if (obsExecutable === undefined) {
+      step('Find OBS Studio', 'failed', 'Install OBS Studio from obsproject.com, then try again.');
+      return finish();
+    }
+    step('Find OBS Studio', 'done', obsExecutable);
+    const running = await isObsRunning();
+    const websocket = readObsWebSocketSettings(obsSettingsPath);
+    if (websocket?.enabled === true) {
+      step('Turn on OBS WebSocket server', 'skipped', `Already on, port ${websocket.port}`);
+    } else if (running) {
+      step(
+        'Turn on OBS WebSocket server',
+        'failed',
+        'In OBS open Tools > WebSocket Server Settings, tick Enable WebSocket server, then press Connect again.',
+      );
+      return finish();
+    } else {
+      const enabled = await enableObsWebSocket(obsSettingsPath);
+      step('Turn on OBS WebSocket server', 'done', `Port ${enabled.port}`);
+    }
+    try {
+      if (running) {
+        step('Start OBS Studio', 'skipped', 'Already running');
+        await obsBridge.reconnect();
+      } else {
+        step('Start OBS Studio', 'done', 'Launching');
+      }
+      await obsProcessSupervisor.ensureReady(25_000);
+      step('Connect to OBS', 'done');
+    } catch {
+      step('Connect to OBS', 'failed', lastObsFailure ?? 'OBS did not answer in time');
+    }
+    return finish();
+  }
   lifecycle.add(
     registerSecureHandler({
       ipcMain,
@@ -2019,3 +2319,39 @@ app.on('before-quit', (event) => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+const CONNECTION_NAMES: Readonly<Record<ConnectionProjection['provider'], string>> = {
+  obs: 'OBS',
+  twitch: 'Twitch',
+  wispr: 'Wispr Flow',
+  groq: 'Groq',
+  supabase: 'Cloud sync',
+};
+
+function logConnection(logs: LogService, connection: ConnectionProjection): void {
+  // Only real faults are errors. Being signed out or missing a key is a setup step.
+  const setupStep =
+    connection.reasonCode === 'SIGNED_OUT' ||
+    connection.reasonCode === 'CLOUD_AUTH_REQUIRED' ||
+    connection.reasonCode === 'NOT_CONFIGURED';
+  const level = setupStep
+    ? 'warn'
+    : connection.phase === 'degraded' || connection.phase === 'auth_required'
+      ? 'error'
+      : connection.phase === 'backoff' || connection.phase === 'reconnecting'
+        ? 'warn'
+        : 'info';
+  const name = CONNECTION_NAMES[connection.provider];
+  logs.transition(
+    connection.provider,
+    `${name} ${connection.phase.replaceAll('_', ' ')}`,
+    connection.reasonCode,
+    level,
+  );
+}
+
+function obsFailureHint(reasonCode: string): string {
+  if (reasonCode === 'AUTH_REQUIRED') return 'OBS rejected the WebSocket password';
+  if (reasonCode === 'VERSION_MISMATCH') return 'OBS 30 or newer with WebSocket 5 is required';
+  return 'OBS is not reachable; is it running with the WebSocket server on?';
+}

@@ -1,7 +1,7 @@
 import type { AgentInteractionProjection } from '@obscurpilot/contracts/agent';
 import type { BootstrapProjection } from '@obscurpilot/contracts/bootstrap';
 import type { CloudAuthProjection } from '@obscurpilot/contracts/cloud';
-import type { ObsProjection } from '@obscurpilot/contracts/obs';
+import type { ObsConnectResult, ObsProjection } from '@obscurpilot/contracts/obs';
 import type { AppSnapshot, ConnectionProjection } from '@obscurpilot/contracts/state';
 import type { TwitchProjection } from '@obscurpilot/contracts/twitch';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
@@ -27,12 +27,13 @@ import {
   announcementForConnection,
   createBrowserSpeechQueue,
 } from '../lib/speech-feedback';
-import { applyStateChanged } from '../lib/state-projection';
+import { applyStateChanged, isConnectionUp } from '../lib/state-projection';
 import { useUiPreferences } from '../lib/use-ui-preferences';
 import { HomePage } from '../pages/home';
+import { LogsPage } from '../pages/logs';
 import { ShortcutsPage } from '../pages/shortcuts';
 
-type Page = 'home' | 'connections' | 'shortcuts' | 'live' | 'activity' | 'settings';
+type Page = 'home' | 'connections' | 'shortcuts' | 'live' | 'activity' | 'logs' | 'settings';
 
 const NAV_ITEMS: ReadonlyArray<{ readonly page: Page; readonly label: string }> = [
   { page: 'home', label: 'Home' },
@@ -40,6 +41,7 @@ const NAV_ITEMS: ReadonlyArray<{ readonly page: Page; readonly label: string }> 
   { page: 'shortcuts', label: 'Shortcuts' },
   { page: 'live', label: 'Live session' },
   { page: 'activity', label: 'Activity' },
+  { page: 'logs', label: 'Logs' },
   { page: 'settings', label: 'Settings' },
 ];
 
@@ -72,6 +74,12 @@ function NavIcon({ page }: { readonly page: Page }) {
       </>
     ),
     activity: <path d="M3 12h4l3-8 4 16 3-8h4" />,
+    logs: (
+      <>
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M8 8h8M8 12h8M8 16h5" />
+      </>
+    ),
     settings: (
       <>
         <path d="M4 8h10M18 8h2M4 16h2M10 16h10" />
@@ -128,7 +136,7 @@ function ConnectionStatus({ connection }: { readonly connection: ConnectionProje
     <div className="connection-tile">
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-medium text-zinc-200 uppercase">{connection.provider}</span>
-        <Badge tone={connection.phase === 'ready' ? 'ready' : 'neutral'}>
+        <Badge tone={isConnectionUp(connection) ? 'ready' : 'neutral'}>
           {connection.phase.replace('_', ' ')}
         </Badge>
       </div>
@@ -336,13 +344,26 @@ function CloudAccess({
 function ObsMirror({
   projection,
   phase,
-  onReconnect,
 }: {
   readonly projection: ObsProjection | undefined;
   readonly phase: ConnectionProjection['phase'];
-  readonly onReconnect: () => void;
 }) {
   const snapshot = projection?.snapshot;
+  const [connecting, setConnecting] = useState(false);
+  const [result, setResult] = useState<ObsConnectResult>();
+  const connect = async () => {
+    setConnecting(true);
+    try {
+      setResult(await window.obscurPilot.connectObs());
+    } catch {
+      setResult({
+        connected: false,
+        steps: [{ label: 'Connect to OBS', status: 'failed', detail: 'See the Logs page' }],
+      });
+    } finally {
+      setConnecting(false);
+    }
+  };
   return (
     <Card className="obs-mirror" id="obs-studio">
       <CardHeader>
@@ -357,10 +378,30 @@ function ObsMirror({
       <CardContent>
         {snapshot === undefined ? (
           <div className="empty-state">
-            <p>OBS is not synchronized yet.</p>
-            <button className="secondary-button" type="button" onClick={onReconnect}>
-              Reconnect OBS
+            <p>
+              One click finds OBS, turns on its WebSocket server, starts it, and connects. No
+              passwords to copy.
+            </p>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={connecting}
+              onClick={() => void connect()}
+            >
+              {connecting ? 'Connecting to OBS…' : 'Connect OBS'}
             </button>
+            {result === undefined ? null : (
+              <ol className="connect-steps" aria-label="Connection steps">
+                {result.steps.map((step) => (
+                  <li key={step.label} data-status={step.status}>
+                    <span>
+                      {step.label}
+                      {step.detail === undefined ? null : <small>{step.detail}</small>}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
           </div>
         ) : (
           <dl className="obs-grid">
@@ -417,7 +458,7 @@ export function App() {
   const cloudSessionPresent = cloudProjection?.userId !== undefined;
   const connections =
     loadState.status === 'ready' ? Object.values(loadState.snapshot.connections) : [];
-  const readyConnections = connections.filter((connection) => connection.phase === 'ready').length;
+  const readyConnections = connections.filter(isConnectionUp).length;
 
   const flushActivities = useCallback(() => {
     activityFrameRef.current = undefined;
@@ -764,7 +805,6 @@ export function App() {
                 <ObsMirror
                   projection={obsProjection}
                   phase={loadState.snapshot.connections.obs.phase}
-                  onReconnect={() => void window.obscurPilot.reconnectObs()}
                 />
                 <Card id="twitch-integration">
                   <CardHeader>
@@ -809,6 +849,19 @@ export function App() {
                         </span>
                       ) : null}
                     </div>
+                    {twitchProjection?.phase === 'connected' ? null : (
+                      <ul className="setup-checklist" aria-label="Twitch requirements">
+                        <li data-met={loadState.bootstrap.configuration.twitchConfigured}>
+                          Twitch app client ID and redirect URL in .env
+                        </li>
+                        <li data-met={loadState.bootstrap.configuration.supabaseConfigured}>
+                          Supabase project URL and public key in .env (holds the Twitch secret)
+                        </li>
+                        <li data-met={cloudSessionPresent}>
+                          Signed in to ObscurPilot cloud (Cloud access card)
+                        </li>
+                      </ul>
+                    )}
                     {twitchNotice !== undefined ? (
                       <p className="cloud-notice" role="status" aria-live="polite">
                         {twitchNotice}
@@ -823,8 +876,12 @@ export function App() {
                   </CardHeader>
                   <CardContent className="configuration-grid">
                     <ConfigurationStatus
+                      configured={loadState.bootstrap.configuration.wisprConfigured}
+                      label="Wispr Flow voice"
+                    />
+                    <ConfigurationStatus
                       configured={loadState.bootstrap.configuration.groqConfigured}
-                      label="Groq voice engine"
+                      label="Groq reasoning"
                     />
                     <ConfigurationStatus
                       configured={loadState.bootstrap.configuration.supabaseConfigured}
@@ -874,6 +931,8 @@ export function App() {
               </header>
               <ActivityTimeline activities={activities} />
             </div>
+          ) : page === 'logs' ? (
+            <LogsPage />
           ) : (
             <div className="op-page">
               <header className="op-page-head">

@@ -1,8 +1,6 @@
 import { z } from 'zod';
 import { createEventEnvelopeSchema } from './ipc.js';
-
-export const GroqSttModelSchema = z.literal('whisper-large-v3-turbo');
-export type GroqSttModel = z.infer<typeof GroqSttModelSchema>;
+import { ObsConnectStepSchema } from './obs.js';
 
 export const GroqReasoningModelSchema = z.enum(['openai/gpt-oss-120b', 'qwen/qwen3.6-27b']);
 export type GroqReasoningModel = z.infer<typeof GroqReasoningModelSchema>;
@@ -62,3 +60,9 @@ export type AgentConfirmationDecisionPayload = z.infer<
 export const AgentInteractionChangedEventSchema = createEventEnvelopeSchema(
   AgentInteractionProjectionSchema,
 );
+
+/** One-click start: show Pilot, connect OBS, and turn on hands-free voice. */
+export const AgentStartResultSchema = z
+  .object({ running: z.boolean(), steps: z.array(ObsConnectStepSchema).max(8) })
+  .strict();
+export type AgentStartResult = z.infer<typeof AgentStartResultSchema>;

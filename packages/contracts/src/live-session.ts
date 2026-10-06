@@ -169,15 +169,43 @@ export const ModerationIntentV1Schema = z
   .strict();
 export type ModerationIntentV1 = z.infer<typeof ModerationIntentV1Schema>;
 
+export const PilotOverlayCornerSchema = z.enum([
+  'top_left',
+  'top_right',
+  'bottom_left',
+  'bottom_right',
+]);
+export type PilotOverlayCorner = z.infer<typeof PilotOverlayCornerSchema>;
+
+/** Where the Pilot rests after a drag: an edge of the work area plus 0..1 along it. */
+export const PilotOverlayAnchorSchema = z
+  .object({
+    edge: z.enum(['top', 'right', 'bottom', 'left']),
+    offset: z.number().min(0).max(1),
+  })
+  .strict();
+export type PilotOverlayAnchor = z.infer<typeof PilotOverlayAnchorSchema>;
+
 export const PilotOverlayPreferencesSchema = z
   .object({
     visible: z.boolean(),
-    corner: z.enum(['top_left', 'top_right', 'bottom_left', 'bottom_right']),
+    corner: PilotOverlayCornerSchema,
     scale: z.number().min(0.75).max(1.5),
-    clickThrough: z.boolean(),
+    locked: z.boolean(),
+    anchor: PilotOverlayAnchorSchema.optional(),
   })
   .strict();
 export type PilotOverlayPreferences = z.infer<typeof PilotOverlayPreferencesSchema>;
+
+export const PilotOverlayDragPayloadSchema = z
+  .object({ phase: z.enum(['start', 'end']) })
+  .strict();
+export type PilotOverlayDragPayload = z.infer<typeof PilotOverlayDragPayloadSchema>;
+
+export const PilotOverlayInteractivePayloadSchema = z
+  .object({ interactive: z.boolean() })
+  .strict();
+export const PilotOverlayAcceptedSchema = z.object({ accepted: z.literal(true) }).strict();
 
 export const PrepareLiveSessionPayloadSchema = z
   .object({ profile: LiveSessionProfileV1Schema, mode: LiveSessionModeSchema })

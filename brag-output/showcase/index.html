@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>ObscurPilot showcase</title>
+    <script src="assets/vendor/gsap.min.js"></script>
+    <script src="assets/audio-rms.js"></script>
+    <style>
+      @font-face {
+        font-family: 'Inter';
+        src: url('assets/fonts/inter-var.woff2') format('woff2');
+        font-weight: 100 900;
+      }
+      @font-face {
+        font-family: 'JetBrains Mono';
+        src: url('assets/fonts/jetbrains-mono-var.woff2') format('woff2');
+        font-weight: 100 800;
+      }
+      :root {
+        --bg: #0b0d12;
+        --panel: #12151d;
+        --raised: #181c26;
+        --line: rgba(160, 175, 205, 0.16);
+        --text: #eef1f7;
+        --muted: #9aa3b4;
+        --pilot: #8b7cff;
+        --ready: #3bd98b;
+        --teal: #2dd4bf;
+        --amber: #ffb547;
+        --live: #ff4d5e;
+        --twitch: #a970ff;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Inter', sans-serif;
+      }
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+      }
+      .scene {
+        position: absolute;
+        inset: 0;
+      }
+      .glow {
+        position: absolute;
+        width: 620px;
+        height: 150px;
+        border-radius: 50%;
+        filter: blur(28px);
+        opacity: 0.5;
+      }
+      .pilot-wrap {
+        position: absolute;
+        width: 560px;
+        height: 640px;
+        mix-blend-mode: lighten;
+      }
+      .pilot-wrap video {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .caption {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 54px;
+        margin: 0;
+        text-align: center;
+        font-size: 48px;
+        font-weight: 640;
+        letter-spacing: -0.015em;
+      }
+      .kicker {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 70px;
+        margin: 0;
+        text-align: center;
+        color: var(--pilot);
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+      }
+      .shot {
+        position: absolute;
+        overflow: hidden;
+        border: 1px solid rgba(160, 175, 205, 0.22);
+        border-radius: 22px;
+        box-shadow: 0 40px 120px rgba(0, 0, 0, 0.6);
+        background: var(--bg);
+      }
+      .shot img {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .wide {
+        left: 210px;
+        top: 120px;
+        width: 1500px;
+        height: 803px;
+      }
+      .ring {
+        position: absolute;
+        border: 3px solid var(--ready);
+        border-radius: 14px;
+        box-shadow: 0 0 24px rgba(59, 217, 139, 0.5);
+      }
+      .dot {
+        display: block;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--teal);
+      }
+      .cursor {
+        position: absolute;
+        width: 40px;
+        height: 40px;
+      }
+
+      /* S1 hook */
+      #hook {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 150px;
+        margin: 0;
+        text-align: center;
+        font-size: 68px;
+        font-weight: 640;
+        letter-spacing: -0.02em;
+      }
+
+      /* S2 meet */
+      #home-shot {
+        transform-origin: 30% 32%;
+      }
+      #meet-title {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 46px;
+        margin: 0;
+        text-align: center;
+        font-size: 50px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      #meet-title span {
+        color: var(--muted);
+        font-weight: 560;
+      }
+
+      /* S3 start */
+      #start-card {
+        position: absolute;
+        left: 360px;
+        top: 200px;
+        width: 1200px;
+        height: 600px;
+        box-sizing: border-box;
+        padding: 64px 80px;
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        background: linear-gradient(160deg, #161a24, #0f1219);
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        gap: 60px;
+        align-items: start;
+      }
+      #beacon {
+        display: block;
+        width: 150px;
+        height: 150px;
+        margin-top: 20px;
+        border: 3px solid rgba(245, 184, 76, 0.45);
+        border-radius: 50%;
+        box-sizing: border-box;
+        position: relative;
+      }
+      #beacon-core {
+        position: absolute;
+        inset: 34px;
+        border-radius: 50%;
+        background: #f5b84c;
+        box-shadow: 0 0 40px rgba(245, 184, 76, 0.55);
+      }
+      #start-copy h2 {
+        margin: 0;
+        font-size: 50px;
+        font-weight: 720;
+        letter-spacing: -0.02em;
+      }
+      #start-btn {
+        display: inline-block;
+        margin-top: 32px;
+        padding: 18px 40px;
+        border-radius: 999px;
+        background: var(--pilot);
+        color: #fff;
+        font-size: 30px;
+        font-weight: 680;
+        box-shadow: 0 12px 36px rgba(139, 124, 255, 0.45);
+      }
+      #steps {
+        margin: 34px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 16px;
+      }
+      #steps li {
+        display: grid;
+        grid-template-columns: 26px 1fr;
+        gap: 14px;
+        font-size: 30px;
+        font-weight: 560;
+      }
+      #steps li .dot {
+        margin-top: 10px;
+        background: var(--ready);
+      }
+      #steps small {
+        display: block;
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 22px;
+        font-weight: 450;
+      }
+
+      /* S4 obs */
+      #conn-shot {
+        transform-origin: 40% 50%;
+      }
+      #obs-shot {
+        left: 300px;
+        top: 150px;
+        width: 1320px;
+        height: 707px;
+      }
+
+      /* S5 voice */
+      #s5-copy {
+        position: absolute;
+        left: 990px;
+        top: 290px;
+        width: 800px;
+        display: flex;
+        flex-direction: column;
+        gap: 46px;
+      }
+      .keys {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        color: var(--muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 40px;
+      }
+      .key {
+        display: block;
+        min-width: 76px;
+        padding: 16px 30px;
+        border: 2px solid rgba(160, 175, 205, 0.32);
+        border-radius: 16px;
+        background: var(--raised);
+        color: var(--text);
+        font-size: 46px;
+        font-weight: 600;
+        text-align: center;
+        box-shadow: 0 9px 0 #05070b;
+      }
+      #cmd {
+        margin: 0;
+        font-size: 62px;
+        font-weight: 640;
+        line-height: 1.2;
+        letter-spacing: -0.015em;
+      }
+      #cmd .w {
+        display: inline-block;
+        margin-right: 0.24em;
+      }
+      .pill {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        align-self: flex-start;
+        padding: 14px 26px;
+        border: 1.5px solid rgba(45, 212, 191, 0.45);
+        border-radius: 999px;
+        background: rgba(45, 212, 191, 0.1);
+        font-size: 32px;
+        font-weight: 560;
+      }
+
+      /* S6 acts */
+      .obs-panel {
+        left: 700px;
+        top: 260px;
+        width: 1120px;
+        height: 328px;
+      }
+      #obs-ring {
+        left: 6px;
+        top: 58px;
+        width: 278px;
+        height: 34px;
+      }
+      #tool-chip {
+        position: absolute;
+        left: 700px;
+        top: 650px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 16px 28px;
+        border: 1.5px solid rgba(56, 189, 248, 0.5);
+        border-radius: 16px;
+        background: rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 28px;
+      }
+      #tool-chip b {
+        color: #38bdf8;
+        font-weight: 700;
+      }
+
+      /* S7 asks */
+      #approve-card {
+        position: absolute;
+        left: 900px;
+        top: 250px;
+        width: 820px;
+        box-sizing: border-box;
+        padding: 46px 52px;
+        border: 2px solid rgba(255, 181, 71, 0.5);
+        border-radius: 26px;
+        background: #141823;
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.5);
+      }
+      #approve-card .eyebrow {
+        margin: 0;
+        color: var(--amber);
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      #approve-card h3 {
+        margin: 16px 0 0;
+        font-size: 54px;
+        font-weight: 720;
+        letter-spacing: -0.02em;
+      }
+      #approve-card .meta {
+        margin: 18px 0 0;
+        color: var(--muted);
+        font-size: 28px;
+      }
+      .buttons {
+        display: flex;
+        gap: 18px;
+        margin-top: 40px;
+      }
+      .btn {
+        display: block;
+        padding: 18px 40px;
+        border-radius: 14px;
+        font-size: 30px;
+        font-weight: 660;
+      }
+      #btn-approve {
+        background: var(--ready);
+        color: #06210f;
+      }
+      #btn-deny {
+        border: 1.5px solid var(--line);
+        color: var(--muted);
+      }
+      #approved {
+        position: absolute;
+        right: 52px;
+        top: 46px;
+        padding: 8px 18px;
+        border-radius: 999px;
+        background: rgba(59, 217, 139, 0.15);
+        color: var(--ready);
+        font-size: 24px;
+        font-weight: 700;
+      }
+      #live-pill {
+        position: absolute;
+        left: 900px;
+        top: 700px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 26px;
+        border-radius: 12px;
+        background: var(--live);
+        color: #fff;
+        font-size: 34px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+      }
+      #live-pill .dot {
+        background: #fff;
+      }
+
+      /* S8 twitch */
+      #twitch-shot {
+        left: 210px;
+        top: 130px;
+        width: 1500px;
+        height: 713px;
+        transform-origin: 35% 40%;
+      }
+
+      /* S9 moods */
+      #moods {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 140px;
+        display: flex;
+        justify-content: center;
+        gap: 24px;
+      }
+      .mood {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 30px;
+        border: 2px solid var(--c);
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--c) 14%, transparent);
+        font-size: 38px;
+        font-weight: 620;
+      }
+      .mood .dot {
+        background: var(--c);
+      }
+
+      /* S10 logs */
+      .logs-mock {
+        left: 260px;
+        top: 150px;
+        width: 1400px;
+        height: 700px;
+        box-sizing: border-box;
+        padding: 46px 60px;
+        transform-origin: 50% 60%;
+      }
+      .lm-head h3 {
+        margin: 0;
+        font-size: 46px;
+        font-weight: 700;
+        letter-spacing: -0.015em;
+      }
+      .lm-head p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 22px;
+      }
+      .lm-panel {
+        margin-top: 30px;
+        border: 1px solid rgba(160, 175, 205, 0.12);
+        border-radius: 20px;
+        background: var(--panel);
+        overflow: hidden;
+      }
+      .lm-toolbar {
+        display: flex;
+        align-items: flex-end;
+        gap: 14px;
+        padding: 18px 22px;
+        border-bottom: 1px solid rgba(160, 175, 205, 0.12);
+      }
+      .lm-field {
+        display: grid;
+        gap: 6px;
+      }
+      .lm-field small {
+        color: #8d96a6;
+        font-size: 15px;
+      }
+      .lm-field b {
+        display: block;
+        padding: 9px 14px;
+        border: 1px solid rgba(160, 175, 205, 0.2);
+        border-radius: 10px;
+        background: var(--raised);
+        font-size: 18px;
+        font-weight: 500;
+      }
+      .lm-grow {
+        flex: 1;
+      }
+      .lm-rows {
+        margin: 0;
+        padding: 10px 0 16px;
+        list-style: none;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 22px;
+      }
+      .lm-row {
+        display: grid;
+        grid-template-columns: 120px 76px 110px minmax(0, 1fr);
+        gap: 14px;
+        align-items: baseline;
+        padding: 11px 22px;
+        border-left: 3px solid transparent;
+      }
+      .lm-row time,
+      .lm-row span {
+        color: #8d96a6;
+      }
+      .lm-row em {
+        color: #6fa8ff;
+        font-size: 15px;
+        font-style: normal;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .lm-row p {
+        margin: 0;
+      }
+      .lm-row small {
+        display: block;
+        color: var(--muted);
+        font-size: 16px;
+      }
+      .lm-ok {
+        border-left-color: var(--ready);
+        background: rgba(59, 217, 139, 0.07);
+      }
+
+      /* S11 speak */
+      #bubble {
+        position: absolute;
+        left: 940px;
+        top: 360px;
+        max-width: 780px;
+        padding: 30px 40px;
+        border: 1.5px solid rgba(94, 234, 212, 0.45);
+        border-radius: 28px 28px 28px 6px;
+        background: rgba(94, 234, 212, 0.08);
+        font-size: 50px;
+        font-weight: 620;
+        letter-spacing: -0.015em;
+      }
+      #handsfree {
+        position: absolute;
+        left: 940px;
+        top: 560px;
+        color: var(--muted);
+        font-size: 30px;
+        font-weight: 520;
+      }
+
+      /* S12 lockup */
+      #lockup {
+        position: absolute;
+        left: 150px;
+        top: 300px;
+        width: 1200px;
+      }
+      #title {
+        margin: 0;
+        font-size: 140px;
+        font-weight: 760;
+        letter-spacing: -0.035em;
+        line-height: 1;
+      }
+      #tagline {
+        margin: 26px 0 0;
+        color: var(--muted);
+        font-size: 50px;
+        font-weight: 520;
+      }
+      #features {
+        margin: 36px 0 0;
+        color: var(--text);
+        font-size: 30px;
+        font-weight: 560;
+      }
+      #byline {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 40px 0 0;
+        color: var(--pilot);
+        font-size: 30px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+      #byline .dot {
+        background: var(--pilot);
+      }
+      .corner {
+        position: absolute;
+        right: 46px;
+        bottom: 46px;
+        width: 90px;
+        height: 90px;
+        border: 0 solid rgba(160, 175, 205, 0.35);
+        border-right-width: 3px;
+        border-bottom-width: 3px;
+        border-bottom-right-radius: 26px;
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="74.1">
+      <!-- S1 Hook: Pilot wakes up -->
+      <section id="s1" class="scene clip" data-start="0" data-duration="4.0" data-track-index="0">
+        <div id="glow-1" class="glow" style="left: 650px; top: 640px; background: radial-gradient(closest-side, rgba(139, 124, 255, 0.55), transparent)"></div>
+        <h1 id="hook">Your stream just got a copilot.</h1>
+      </section>
+
+      <!-- S2 Meet ObscurPilot: real Home screen -->
+      <section id="s2" class="scene clip" data-start="4.0" data-duration="6.0" data-track-index="0">
+        <p id="s2-kicker" class="kicker">Meet ObscurPilot</p>
+        <div id="home-shot" class="shot wide"><img src="assets/img/op-home.png" alt="ObscurPilot Home screen with the Start Pilot button" /></div>
+        <p id="meet-title">A voice copilot for OBS and Twitch. <span>You talk, it runs the show.</span></p>
+      </section>
+
+      <!-- S3 Start Pilot: one click -->
+      <section id="s3" class="scene clip" data-start="10.0" data-duration="6.34" data-track-index="0">
+        <p id="s3-kicker" class="kicker">One click to start</p>
+        <div id="start-card">
+          <span id="beacon"><span id="beacon-core"></span></span>
+          <div id="start-copy">
+            <h2>Ready when you are.</h2>
+            <span id="start-btn">Start Pilot</span>
+            <ol id="steps">
+              <li id="st1"><span class="dot"></span><span>Show Pilot</span></li>
+              <li id="st2"><span class="dot"></span><span>Connect OBS</span></li>
+              <li id="st3"><span class="dot"></span><span>Turn on voice<small>Say “Hi Obscur”, or hold Alt + X</small></span></li>
+              <li id="st4"><span class="dot"></span><span>Command brain<small>Groq reasoning ready</small></span></li>
+            </ol>
+          </div>
+        </div>
+        <svg id="cursor-1" class="cursor" style="left: 1100px; top: 640px" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 2l15 9-6.5 1.6L16 20l-3 1.4-3.4-7.3L4 18z" fill="#fff" stroke="#0b0d12" stroke-width="1.2" /></svg>
+      </section>
+
+      <!-- S4 OBS: real Connections screen, then real OBS -->
+      <section id="s4" class="scene clip" data-start="16.34" data-duration="7.36" data-track-index="0">
+        <div id="conn-shot" class="shot wide"><img src="assets/img/op-connections.png" alt="ObscurPilot Connections screen with OBS Studio ready" /></div>
+        <div id="obs-shot" class="shot"><img src="assets/img/obs-scene.png" alt="OBS Studio connected to Twitch" /></div>
+        <p id="cap-4a" class="caption">A live mirror of OBS: scenes, inputs, stream state.</p>
+        <p id="cap-4b" class="caption">It finds OBS and connects. No passwords to copy.</p>
+      </section>
+
+      <!-- S5 Voice: Alt + X and Wispr Flow -->
+      <section id="s5" class="scene clip" data-start="23.7" data-duration="5.4" data-track-index="0">
+        <div id="glow-5" class="glow" style="left: 270px; top: 690px; background: radial-gradient(closest-side, rgba(45, 212, 191, 0.5), transparent)"></div>
+        <div id="s5-copy">
+          <div class="keys">
+            <span id="key-alt" class="key">Alt</span>
+            <span>+</span>
+            <span id="key-x" class="key">X</span>
+          </div>
+          <p id="cmd"><span class="w">“Pilot,</span><span class="w">switch</span><span class="w">to</span><span class="w">the</span><span class="w">gaming</span><span class="w">scene”</span></p>
+          <div id="wispr" class="pill"><span class="dot"></span>Voice by Wispr Flow</div>
+        </div>
+      </section>
+
+      <!-- S6 It acts: real OBS scene switch -->
+      <section id="s6" class="scene clip" data-start="29.1" data-duration="7.8" data-track-index="0">
+        <div id="glow-6" class="glow" style="left: 90px; top: 690px; background: radial-gradient(closest-side, rgba(56, 189, 248, 0.45), transparent)"></div>
+        <div id="obs-before" class="shot obs-panel"><img src="assets/img/obs-scene-crop.png" alt="OBS on the default scene" /></div>
+        <div id="obs-after" class="shot obs-panel">
+          <img src="assets/img/obs-gaming-crop.png" alt="OBS switched to the Gaming scene" />
+          <div id="obs-ring" class="ring"></div>
+        </div>
+        <div id="tool-chip"><b>obs.set_scene</b><span>“Gaming”</span></div>
+        <p id="cap-6a" class="caption">It understands, picks the right tool, and acts.</p>
+        <p id="cap-6b" class="caption">OBS switched to Gaming.</p>
+      </section>
+
+      <!-- S7 Asks first -->
+      <section id="s7" class="scene clip" data-start="36.9" data-duration="8.2" data-track-index="0">
+        <div id="approve-card">
+          <p class="eyebrow">Pilot needs your approval</p>
+          <h3>Go live on Twitch?</h3>
+          <p class="meta">Stream title: Wuchang Fallen Feathers!!!</p>
+          <div class="buttons"><span id="btn-approve" class="btn">Approve</span><span id="btn-deny" class="btn">Deny</span></div>
+          <span id="approved">Approved</span>
+        </div>
+        <div id="live-pill"><span class="dot"></span>LIVE</div>
+        <svg id="cursor-2" class="cursor" style="left: 1180px; top: 700px" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 2l15 9-6.5 1.6L16 20l-3 1.4-3.4-7.3L4 18z" fill="#fff" stroke="#0b0d12" stroke-width="1.2" /></svg>
+        <p id="cap-7" class="caption">Anything risky waits for your yes.</p>
+      </section>
+
+      <!-- S8 Twitch: real Stream Manager -->
+      <section id="s8" class="scene clip" data-start="45.1" data-duration="7.55" data-track-index="0">
+        <div id="twitch-shot" class="shot"><img src="assets/img/twitch-stream-manager.jpg" alt="Twitch Stream Manager for the creator channel" /></div>
+        <p id="cap-8" class="caption">Plugged into Twitch: stream title, category, chat and moderation.</p>
+      </section>
+
+      <!-- S9 Moods -->
+      <section id="s9" class="scene clip" data-start="52.65" data-duration="3.8" data-track-index="0">
+        <div id="glow-9" class="glow" style="left: 650px; top: 600px; background: radial-gradient(closest-side, rgba(139, 124, 255, 0.5), transparent)"></div>
+        <div id="moods">
+          <div id="m1" class="mood" style="--c: #a78bfa"><span class="dot"></span>Thinking</div>
+          <div id="m2" class="mood" style="--c: #38bdf8"><span class="dot"></span>Working</div>
+          <div id="m3" class="mood" style="--c: #ffb547"><span class="dot"></span>Asks first</div>
+          <div id="m4" class="mood" style="--c: #f472b6"><span class="dot"></span>Done</div>
+        </div>
+      </section>
+
+      <!-- S10 Logs -->
+      <section id="s10" class="scene clip" data-start="56.45" data-duration="5.65" data-track-index="0">
+        <div id="logs" class="shot logs-mock">
+          <div class="lm-head">
+            <h3>Logs</h3>
+            <p>What ObscurPilot is doing right now: connections, voice, the agent, and live sessions.</p>
+          </div>
+          <div class="lm-panel">
+            <div class="lm-toolbar">
+              <span class="lm-field"><small>Show</small><b>Info and up</b></span>
+              <span class="lm-field"><small>Source</small><b>All sources</b></span>
+              <span class="lm-field lm-grow"><small>Search</small><b style="color: #8d96a6">obs, refused, wispr...</b></span>
+            </div>
+            <ol class="lm-rows">
+              <li class="lm-row"><time>15:05:40</time><em>info</em><span>agent</span><p>Start Pilot requested</p></li>
+              <li class="lm-row"><time>15:05:40</time><em>info</em><span>agent</span><p>Show Pilot: done</p></li>
+              <li class="lm-row"><time>15:05:40</time><em>info</em><span>obs</span><p>OBS ready<small>SYNCHRONIZED</small></p></li>
+              <li class="lm-row"><time>15:05:41</time><em>info</em><span>wispr</span><p>Transcribing with Wispr Flow</p></li>
+              <li class="lm-row"><time>15:05:42</time><em>info</em><span>agent</span><p>Agent tool active<small>obs.set_scene</small></p></li>
+              <li class="lm-row lm-ok"><time>15:05:42</time><em>info</em><span>obs</span><p>Program scene changed<small>Gaming</small></p></li>
+            </ol>
+          </div>
+        </div>
+        <p id="cap-10" class="caption">Every move, logged. Your keys never reach the screen.</p>
+      </section>
+
+      <!-- S11 Speaks back -->
+      <section id="s11" class="scene clip" data-start="62.1" data-duration="4.2" data-track-index="0">
+        <div id="glow-11" class="glow" style="left: 270px; top: 690px; background: radial-gradient(closest-side, rgba(94, 234, 212, 0.45), transparent)"></div>
+        <div id="bubble">“Done. You're on the gaming scene.”</div>
+        <p id="handsfree">Spoken replies. Hands-free with “Hi Obscur”.</p>
+      </section>
+
+      <!-- S12 Drop in the corner + lockup -->
+      <section id="s12" class="scene clip" data-start="66.3" data-duration="7.8" data-track-index="0">
+        <div id="corner-br" class="corner"></div>
+        <div id="lockup">
+          <h2 id="title">ObscurPilot</h2>
+          <p id="tagline">Hold Alt + X. Talk to your stream.</p>
+          <p id="features">OBS · Twitch · Wispr Flow voice · approvals · logs</p>
+          <p id="byline"><span class="dot"></span>Built entirely by voice with Wispr Flow</p>
+        </div>
+      </section>
+
+      <!-- Pilot clips: frame-stepped renders of the app's own agent engine -->
+      <div id="pw-wake" class="pilot-wrap" style="left: 680px; top: 100px"><video id="v-wake" src="assets/video/pilot-wake.mp4" data-start="0" data-duration="4.0" data-track-index="1" muted playsinline></video></div>
+      <div id="pw-listen" class="pilot-wrap" style="left: 300px; top: 150px"><video id="v-listen" src="assets/video/pilot-listen.mp4" data-start="23.7" data-duration="5.4" data-track-index="1" muted playsinline></video></div>
+      <div id="pw-think" class="pilot-wrap" style="left: 90px; top: 150px"><video id="v-think" src="assets/video/pilot-think.mp4" data-start="29.1" data-duration="7.8" data-track-index="1" muted playsinline></video></div>
+      <div id="pw-ask" class="pilot-wrap" style="left: 250px; top: 150px"><video id="v-ask" src="assets/video/pilot-ask.mp4" data-start="36.9" data-duration="8.2" data-track-index="1" muted playsinline></video></div>
+      <div id="pw-moods" class="pilot-wrap" style="left: 680px; top: 60px"><video id="v-moods" src="assets/video/pilot-moods.mp4" data-start="52.65" data-duration="3.8" data-track-index="1" muted playsinline></video></div>
+      <div id="pw-speak" class="pilot-wrap" style="left: 300px; top: 150px"><video id="v-speak" src="assets/video/pilot-speak.mp4" data-start="62.1" data-duration="4.2" data-track-index="1" muted playsinline></video></div>
+      <div id="pw-drop" class="pilot-wrap" style="left: 680px; top: 100px"><video id="v-drop" src="assets/video/pilot-drop.mp4" data-start="66.3" data-duration="7.8" data-track-index="1" muted playsinline></video></div>
+
+      <div id="fade"></div>
+
+      <!-- Audio -->
+      <audio id="sfx-reconnect" src="assets/sfx/impactSoft_medium_001.ogg" data-start="1.6" data-duration="0.18" data-track-index="3" data-volume="0.55"></audio>
+      <audio id="sfx-home" src="assets/sfx/card-slide-1.ogg" data-start="4.0" data-duration="0.5" data-track-index="4" data-volume="0.4"></audio>
+      <audio id="sfx-click1" src="assets/sfx/click_003.ogg" data-start="10.95" data-duration="0.01" data-track-index="3" data-volume="0.8"></audio>
+      <audio id="sfx-st1" src="assets/sfx/click2.ogg" data-start="11.6" data-duration="0.06" data-track-index="4" data-volume="0.4"></audio>
+      <audio id="sfx-st2" src="assets/sfx/click2.ogg" data-start="12.12" data-duration="0.06" data-track-index="5" data-volume="0.4"></audio>
+      <audio id="sfx-st3" src="assets/sfx/click2.ogg" data-start="12.65" data-duration="0.06" data-track-index="4" data-volume="0.4"></audio>
+      <audio id="sfx-st4" src="assets/sfx/impactGlass_light_002.ogg" data-start="13.18" data-duration="0.21" data-track-index="5" data-volume="0.4"></audio>
+      <audio id="sfx-conn" src="assets/sfx/card-slide-1.ogg" data-start="16.34" data-duration="0.5" data-track-index="3" data-volume="0.4"></audio>
+      <audio id="sfx-obs" src="assets/sfx/card-slide-1.ogg" data-start="20.0" data-duration="0.5" data-track-index="4" data-volume="0.4"></audio>
+      <audio id="sfx-alt" src="assets/sfx/click_003.ogg" data-start="23.9" data-duration="0.01" data-track-index="3" data-volume="0.75"></audio>
+      <audio id="sfx-x" src="assets/sfx/click_002.ogg" data-start="24.02" data-duration="0.01" data-track-index="4" data-volume="0.75"></audio>
+      <audio id="sfx-w1" src="assets/sfx/keypress-003.wav" data-start="24.4" data-duration="0.2" data-track-index="5" data-volume="0.35"></audio>
+      <audio id="sfx-w2" src="assets/sfx/keypress-007.wav" data-start="24.74" data-duration="0.2" data-track-index="3" data-volume="0.35"></audio>
+      <audio id="sfx-w3" src="assets/sfx/keypress-012.wav" data-start="25.08" data-duration="0.2" data-track-index="4" data-volume="0.35"></audio>
+      <audio id="sfx-w4" src="assets/sfx/keypress-018.wav" data-start="25.42" data-duration="0.2" data-track-index="5" data-volume="0.35"></audio>
+      <audio id="sfx-w5" src="assets/sfx/keypress-024.wav" data-start="25.76" data-duration="0.2" data-track-index="3" data-volume="0.35"></audio>
+      <audio id="sfx-w6" src="assets/sfx/keypress-003.wav" data-start="26.1" data-duration="0.2" data-track-index="4" data-volume="0.35"></audio>
+      <audio id="sfx-wispr" src="assets/sfx/click2.ogg" data-start="26.8" data-duration="0.06" data-track-index="5" data-volume="0.45"></audio>
+      <audio id="sfx-switch" src="assets/sfx/switch_002.ogg" data-start="32.4" data-duration="0.3" data-track-index="3" data-volume="0.5"></audio>
+      <audio id="sfx-done" src="assets/sfx/impactGlass_light_002.ogg" data-start="33.7" data-duration="0.21" data-track-index="4" data-volume="0.45"></audio>
+      <audio id="sfx-card" src="assets/sfx/card-slide-1.ogg" data-start="37.2" data-duration="0.5" data-track-index="5" data-volume="0.4"></audio>
+      <audio id="sfx-approve" src="assets/sfx/click_003.ogg" data-start="40.6" data-duration="0.01" data-track-index="3" data-volume="0.8"></audio>
+      <audio id="sfx-live" src="assets/sfx/impactSoft_medium_002.ogg" data-start="41.3" data-duration="0.14" data-track-index="4" data-volume="0.55"></audio>
+      <audio id="sfx-twitch" src="assets/sfx/card-slide-1.ogg" data-start="45.1" data-duration="0.5" data-track-index="5" data-volume="0.4"></audio>
+      <audio id="sfx-m1" src="assets/sfx/click_003.ogg" data-start="52.65" data-duration="0.01" data-track-index="3" data-volume="0.4"></audio>
+      <audio id="sfx-m2" src="assets/sfx/click_002.ogg" data-start="53.44" data-duration="0.01" data-track-index="4" data-volume="0.4"></audio>
+      <audio id="sfx-m3" src="assets/sfx/click_003.ogg" data-start="54.23" data-duration="0.01" data-track-index="5" data-volume="0.4"></audio>
+      <audio id="sfx-m4" src="assets/sfx/impactGlass_light_002.ogg" data-start="55.02" data-duration="0.21" data-track-index="3" data-volume="0.45"></audio>
+      <audio id="sfx-logs" src="assets/sfx/card-slide-1.ogg" data-start="56.45" data-duration="0.5" data-track-index="4" data-volume="0.4"></audio>
+      <audio id="sfx-grab" src="assets/sfx/impactSoft_medium_004.ogg" data-start="66.5" data-duration="0.15" data-track-index="3" data-volume="0.4"></audio>
+      <audio id="sfx-bell" src="assets/sfx/impactBell_heavy_000.ogg" data-start="67.35" data-duration="1.48" data-track-index="4" data-volume="0.3"></audio>
+      <audio id="sfx-land" src="assets/sfx/impactSoft_medium_001.ogg" data-start="67.77" data-duration="0.18" data-track-index="5" data-volume="0.55"></audio>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const ease = 'power3.out';
+      const rise = (target, at, extra = {}) =>
+        tl.fromTo(target, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.45, ease, ...extra }, at);
+      const out = (target, at) => tl.to(target, { opacity: 0, duration: 0.25 }, at);
+
+      // S1 Hook (beat-locked: reconnect at 1.60s lives in the clip)
+      rise('#hook', 1.8);
+      out('#hook', 3.75);
+
+      // S2 Meet: real Home screen slides in on the 3.70s strong cue region, push to Start Pilot
+      tl.fromTo('#home-shot', { opacity: 0, y: 60, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.6, ease }, 4.0);
+      tl.to('#home-shot', { scale: 1.12, duration: 4.6, ease: 'sine.inOut' }, 4.6);
+      rise('#s2-kicker', 4.3);
+      rise('#meet-title', 4.9);
+      out(['#home-shot', '#meet-title', '#s2-kicker'], 9.75);
+
+      // S3 Start Pilot: cursor clicks, steps arrive on the beat grid and hold as a set
+      tl.fromTo('#start-card', { opacity: 0, scale: 0.97 }, { opacity: 1, scale: 1, duration: 0.5, ease }, 10.0);
+      rise('#s3-kicker', 10.1);
+      tl.fromTo('#cursor-1', { opacity: 0, x: 220, y: 120 }, { opacity: 1, x: 0, y: 0, duration: 0.7, ease: 'power2.out' }, 10.2);
+      tl.fromTo('#start-btn', { scale: 1 }, { scale: 0.94, duration: 0.08, yoyo: true, repeat: 1 }, 10.95);
+      ['#st1', '#st2', '#st3', '#st4'].forEach((id, i) => {
+        tl.fromTo(id, { opacity: 0, x: -16 }, { opacity: 1, x: 0, duration: 0.3, ease }, 11.6 + i * 0.526); // beat-grid: 11.60, 12.12, 12.65, 13.18
+      });
+      tl.to('#cursor-1', { opacity: 0, duration: 0.3 }, 11.4);
+      tl.to('#beacon', { borderColor: 'rgba(59, 217, 139, 0.5)', duration: 0.4 }, 13.4);
+      tl.to('#beacon-core', { backgroundColor: '#3bd98b', boxShadow: '0 0 44px rgba(59, 217, 139, 0.6)', duration: 0.4 }, 13.4);
+      out(['#start-card', '#s3-kicker'], 16.1);
+
+      // S4 OBS: real Connections screen, then the real OBS window
+      tl.fromTo('#conn-shot', { opacity: 0, x: 160 }, { opacity: 1, x: 0, duration: 0.55, ease }, 16.34);
+      tl.to('#conn-shot', { scale: 1.18, duration: 3.2, ease: 'sine.inOut' }, 16.7);
+      rise('#cap-4a', 16.9);
+      out('#cap-4a', 19.8);
+      tl.to('#conn-shot', { opacity: 0, duration: 0.3 }, 19.85);
+      tl.fromTo('#obs-shot', { opacity: 0, y: 120, scale: 0.95 }, { opacity: 1, y: 0, scale: 1, duration: 0.6, ease }, 20.0);
+      rise('#cap-4b', 20.4);
+      out(['#obs-shot', '#cap-4b'], 23.45);
+
+      // S5 Voice: Pilot glides left, Alt + X press, command types in word by word
+      tl.fromTo('#pw-listen', { x: 380 }, { x: 0, duration: 0.6, ease: 'power2.inOut' }, 23.7);
+      tl.fromTo('#s5-copy', { opacity: 0, x: 40 }, { opacity: 1, x: 0, duration: 0.4, ease }, 24.0);
+      tl.fromTo('#key-alt', { y: 0, boxShadow: '0 9px 0 #05070b' }, { y: 7, boxShadow: '0 2px 0 #05070b', duration: 0.08 }, 23.9);
+      tl.fromTo('#key-x', { y: 0, boxShadow: '0 9px 0 #05070b' }, { y: 7, boxShadow: '0 2px 0 #05070b', duration: 0.08 }, 24.02);
+      tl.to(['#key-alt', '#key-x'], { y: 0, boxShadow: '0 9px 0 #05070b', duration: 0.12 }, 26.5);
+      gsap.utils.toArray('#cmd .w').forEach((word, i) => {
+        tl.fromTo(word, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.22, ease }, 24.4 + i * 0.34);
+      });
+      rise('#wispr', 26.8);
+      out('#s5-copy', 28.85);
+
+      // S6 It acts: tool chip, then the real OBS switches to Gaming (switch at 32.40s)
+      tl.fromTo('#obs-before', { opacity: 0, x: 60 }, { opacity: 1, x: 0, duration: 0.5, ease }, 29.2);
+      rise('#cap-6a', 29.5);
+      tl.fromTo('#tool-chip', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.35, ease }, 30.9);
+      out('#cap-6a', 32.2);
+      tl.fromTo('#obs-after', { opacity: 0 }, { opacity: 1, duration: 0.25, ease: 'none' }, 32.4);
+      tl.fromTo('#obs-ring', { opacity: 0, scale: 1.15 }, { opacity: 1, scale: 1, duration: 0.35, ease }, 32.6);
+      rise('#cap-6b', 32.6);
+      out(['#obs-before', '#obs-after', '#tool-chip', '#cap-6b'], 36.65);
+
+      // S7 Asks first: approval card, cursor approves, Pilot goes live (live at 41.30s)
+      tl.fromTo('#approve-card', { opacity: 0, x: 80 }, { opacity: 1, x: 0, duration: 0.55, ease }, 37.2);
+      rise('#cap-7', 37.6);
+      tl.fromTo('#cursor-2', { opacity: 0, x: 200, y: 140 }, { opacity: 1, x: 0, y: 0, duration: 0.8, ease: 'power2.out' }, 39.6);
+      tl.fromTo('#btn-approve', { scale: 1 }, { scale: 0.94, duration: 0.08, yoyo: true, repeat: 1 }, 40.6);
+      tl.fromTo('#approved', { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(2)' }, 40.75);
+      tl.to('#approve-card', { borderColor: 'rgba(59, 217, 139, 0.6)', duration: 0.3 }, 40.75);
+      tl.to('#cursor-2', { opacity: 0, duration: 0.3 }, 41.0);
+      tl.fromTo('#live-pill', { opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1, duration: 0.35, ease: 'back.out(2)' }, 41.3);
+      out(['#approve-card', '#live-pill', '#cap-7'], 44.85);
+
+      // S8 Twitch: real Stream Manager
+      tl.fromTo('#twitch-shot', { opacity: 0, y: 80 }, { opacity: 1, y: 0, duration: 0.6, ease }, 45.1);
+      tl.to('#twitch-shot', { scale: 1.12, duration: 6.2, ease: 'sine.inOut' }, 45.6);
+      rise('#cap-8', 45.6);
+      out(['#twitch-shot', '#cap-8'], 52.4);
+
+      // S9 Moods: chips accumulate with Pilot's expressions (beat-grid every 0.79s)
+      tl.fromTo('#pw-moods', { scale: 0.9, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.35, ease }, 52.65);
+      ['#m1', '#m2', '#m3', '#m4'].forEach((id, i) => {
+        tl.fromTo(id, { opacity: 0, y: 22, scale: 0.92 }, { opacity: 1, y: 0, scale: 1, duration: 0.3, ease: 'back.out(1.8)' }, 52.65 + i * 0.79);
+      });
+      out(['#moods', '#pw-moods'], 56.2);
+
+      // S10 Logs: lines stream in, then hold as a set
+      tl.fromTo('#logs', { opacity: 0, y: 80 }, { opacity: 1, y: 0, duration: 0.55, ease }, 56.45);
+      tl.to('#logs', { scale: 1.06, duration: 5.0, ease: 'sine.inOut' }, 56.9);
+      gsap.utils.toArray('#logs .lm-row').forEach((row, i) => {
+        tl.fromTo(row, { opacity: 0, x: -18 }, { opacity: 1, x: 0, duration: 0.2, ease }, 57.0 + i * 0.3);
+      });
+      rise('#cap-10', 57.4);
+      out(['#logs', '#cap-10'], 61.85);
+
+      // S11 Speaks back
+      tl.fromTo('#pw-speak', { opacity: 0 }, { opacity: 1, duration: 0.3 }, 62.1);
+      tl.fromTo('#bubble', { opacity: 0, y: 20, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.45, ease }, 62.4);
+      rise('#handsfree', 63.2);
+      out(['#bubble', '#handsfree', '#pw-speak'], 66.05);
+
+      // S12 Grabbed and dropped in the corner; lockup lands on the 67.35s beat
+      tl.fromTo('#pw-drop', { opacity: 0 }, { opacity: 1, duration: 0.25 }, 66.3);
+      tl.fromTo('#pw-drop', { x: 0, y: 0, scale: 1 }, { x: 700, y: 370, scale: 0.6, duration: 1.1, ease: 'sine.inOut', immediateRender: false }, 66.6);
+      tl.fromTo('#corner-br', { opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1, duration: 0.4, ease }, 67.5);
+      tl.fromTo('#title', { opacity: 0, x: -36 }, { opacity: 1, x: 0, duration: 0.6, ease }, 67.35);
+      tl.fromTo('#tagline', { opacity: 0, x: -24 }, { opacity: 1, x: 0, duration: 0.5, ease }, 67.9);
+      rise('#features', 68.6);
+      rise('#byline', 69.4);
+      tl.fromTo('#fade', { opacity: 0 }, { opacity: 1, duration: 0.6, ease: 'none' }, 73.5);
+
+      // Audio-reactive: music RMS breathes the floor glows and the lockup glow
+      const glows = ['#glow-1', '#glow-5', '#glow-6', '#glow-9', '#glow-11'].map((id) => document.querySelector(id));
+      const title = document.querySelector('#title');
+      const frames = Math.min(window.AUDIO_RMS.length, Math.ceil(74.1 * window.AUDIO_FPS));
+      for (let f = 0; f < frames; f++) {
+        const level = window.AUDIO_RMS[f];
+        tl.call(() => {
+          for (const glow of glows) glow.style.opacity = (0.35 + 0.45 * level).toFixed(3);
+          title.style.textShadow = `0 0 ${Math.round(18 + 30 * level)}px rgba(139, 124, 255, ${(0.18 + 0.3 * level).toFixed(3)})`;
+        }, [], f / window.AUDIO_FPS);
+      }
+
+      window.__timelines['main'] = tl;
+    </script>
+  </body>
+</html>

@@ -27,11 +27,8 @@ const loopbackWebSocketUrl = z.preprocess(
 );
 
 const EnvironmentSchema = z.object({
+  WISPR_FLOW_API_KEY: optionalSecret,
   GROQ_API_KEY: optionalSecret,
-  GROQ_STT_MODEL: z.preprocess(
-    emptyToUndefined,
-    z.literal('whisper-large-v3-turbo').default('whisper-large-v3-turbo'),
-  ),
   GROQ_REASONING_MODEL: z.preprocess(
     emptyToUndefined,
     z.enum(['openai/gpt-oss-120b', 'qwen/qwen3.6-27b']).default('openai/gpt-oss-120b'),

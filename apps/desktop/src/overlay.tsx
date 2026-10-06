@@ -1,9 +1,25 @@
 import type { AgentInteractionProjection } from '@obscurpilot/contracts/agent';
 import type { HandsFreeProjection, PttProjection } from '@obscurpilot/contracts/audio';
 import type { LiveSessionProjection } from '@obscurpilot/contracts/live-session';
+import type {
+  AppSnapshot,
+  ConnectionProjection,
+  ConnectionProvider,
+} from '@obscurpilot/contracts/state';
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { moodForPhase } from './agent/agent-mood';
+import { PilotAgent, type PilotAgentHandle } from './agent/pilot-agent';
+import { applyStateChanged, isConnectionUp } from './lib/state-projection';
 import './overlay.css';
+
+const PROVIDER_NAMES: Readonly<Record<ConnectionProvider, string>> = {
+  obs: 'OBS',
+  twitch: 'Twitch',
+  wispr: 'Wispr Flow',
+  groq: 'Groq',
+  supabase: 'Cloud sync',
+};
 
 const PTT: PttProjection = { phase: 'idle', elapsedMs: 0, level: 0, reasonCode: 'IDLE' };
 const AGENT: AgentInteractionProjection = {
@@ -33,7 +49,33 @@ export function PilotOverlay() {
   const [agent, setAgent] = useState(AGENT);
   const [handsFree, setHandsFree] = useState(HANDS_FREE);
   const [session, setSession] = useState(SESSION);
-  const orb = useRef<HTMLSpanElement>(null);
+  // Null until the first snapshot arrives, so Pilot never flashes offline during startup.
+  const [connections, setConnections] = useState<readonly ConnectionProjection[] | null>(null);
+  const pilot = useRef<PilotAgentHandle>(null);
+
+  useEffect(() => {
+    let snapshot: AppSnapshot | undefined;
+    let disposed = false;
+    const accept = (next: AppSnapshot) => {
+      snapshot = next;
+      setConnections(Object.values(next.connections));
+    };
+    const resync = () =>
+      void window.obscurPilot.getSnapshot().then((next) => {
+        if (!disposed) accept(next);
+      });
+    resync();
+    const offState = window.obscurPilot.onStateChanged((event) => {
+      if (snapshot === undefined) return;
+      const next = applyStateChanged(snapshot, event);
+      if (next === 'resync_required') resync();
+      else accept(next);
+    });
+    return () => {
+      disposed = true;
+      offState();
+    };
+  }, []);
 
   useEffect(() => {
     void Promise.all([
@@ -46,12 +88,12 @@ export function PilotOverlay() {
       setHandsFree(handsFreeState);
     });
     const offPtt = window.obscurPilot.onPttChanged((next) => {
-      orb.current?.style.setProperty('--overlay-energy', next.level.toFixed(3));
+      pilot.current?.setEnergy(next.level);
       setPtt({ ...next, level: 0 });
     });
     const offAgent = window.obscurPilot.onAgentInteractionChanged(setAgent);
     const offHandsFree = window.obscurPilot.onHandsFreeChanged((next) => {
-      orb.current?.style.setProperty('--overlay-energy', next.level.toFixed(3));
+      pilot.current?.setEnergy(next.level);
       setHandsFree({ ...next, level: 0 });
     });
     const offSession = window.obscurPilot.onLiveSessionChanged((next) => {
@@ -79,14 +121,22 @@ export function PilotOverlay() {
     utterance.pitch = 0.96;
     utterance.volume = 0.86;
     const finish = () => void window.obscurPilot.finishHandsFreeSpeech(speech.id);
+    const syllable = () => pilot.current?.pulseSpeech();
     utterance.addEventListener('end', finish, { once: true });
     utterance.addEventListener('error', finish, { once: true });
+    utterance.addEventListener('boundary', syllable);
     window.speechSynthesis.speak(utterance);
     return () => {
       utterance.removeEventListener('end', finish);
       utterance.removeEventListener('error', finish);
+      utterance.removeEventListener('boundary', syllable);
     };
   }, [handsFree.phase, handsFree.speech]);
+
+  // A finished agent turn drops straight back to the session phase, so mark it with a beat.
+  useEffect(() => {
+    if (agent.phase === 'completed') pilot.current?.celebrate();
+  }, [agent.phase]);
 
   const captureActive = ['arming', 'capturing', 'encoding'].includes(ptt.phase);
   const agentActive = !['idle', 'completed'].includes(agent.phase);
@@ -129,23 +179,36 @@ export function PilotOverlay() {
         ? agent.reasonCode
         : session.reasonCode;
 
+  const missing = (connections ?? [])
+    .filter((connection) => !isConnectionUp(connection))
+    .map((connection) => PROVIDER_NAMES[connection.provider]);
+  const offline = connections !== null && missing.length === connections.length;
+  const phaseMood = moodForPhase(phase);
+  // Offline only replaces resting moods; live voice and agent activity still show through.
+  const mood = offline && (phaseMood === 'idle' || phaseMood === 'standby') ? 'offline' : phaseMood;
+  const notConnected = 'Not connected: ' + missing.join(', ');
+  const tooltip = mood === 'offline' ? notConnected : missing.length ? `${label}. ${notConnected}` : label;
+
+  const status = handsFree.phase === 'standby' ? 'Say ' + handsFree.wakePhrase : detail;
+
+  // The character carries state visually; the text stays for screen readers only.
   return (
     <main className="pilot-presence" data-phase={phase} aria-live="polite">
-      <div className="pilot-orb" aria-hidden="true">
-        <span className="pilot-wave pilot-wave-a" />
-        <span className="pilot-wave pilot-wave-b" />
-        <span className="pilot-core" ref={orb} />
-      </div>
-      <div className="pilot-copy">
-        <span className="pilot-kicker">OBSCURPILOT</span>
-        <strong>{label}</strong>
-        <span>
-          {handsFree.phase === 'standby'
-            ? 'Say ' + handsFree.wakePhrase
-            : detail.replaceAll('_', ' ')}
-        </span>
-      </div>
-      {session.phase === 'live' ? <span className="pilot-live">LIVE</span> : null}
+      <PilotAgent
+        mood={mood}
+        title={tooltip}
+        ref={pilot}
+        onInteractiveChange={(interactive) =>
+          void window.obscurPilot.setPilotOverlayInteractive(interactive)
+        }
+        onDrag={(phase) => void window.obscurPilot.dragPilotOverlay(phase)}
+      />
+      <p className="pilot-status">
+        {session.phase === 'live' ? 'Live. ' : ''}
+        {mood === 'offline'
+          ? notConnected
+          : `${label}. ${status.replaceAll('_', ' ').toLowerCase()}`}
+      </p>
     </main>
   );
 }

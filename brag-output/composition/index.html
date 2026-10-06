@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>ObscurPilot brag</title>
+    <script src="assets/vendor/gsap.min.js"></script>
+    <script src="assets/audio-rms.js"></script>
+    <style>
+      @font-face {
+        font-family: 'Inter';
+        src: url('assets/fonts/inter-var.woff2') format('woff2');
+        font-weight: 100 900;
+      }
+      @font-face {
+        font-family: 'JetBrains Mono';
+        src: url('assets/fonts/jetbrains-mono-var.woff2') format('woff2');
+        font-weight: 100 800;
+      }
+      :root {
+        --bg: #0b0d12;
+        --panel: #181c26;
+        --text: #eef1f7;
+        --muted: #9aa3b4;
+        --pilot: #8b7cff;
+        --ready: #3bd98b;
+        --teal: #2dd4bf;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Inter', sans-serif;
+      }
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+      }
+      .scene {
+        position: absolute;
+        inset: 0;
+      }
+      .glow {
+        position: absolute;
+        width: 620px;
+        height: 150px;
+        border-radius: 50%;
+        filter: blur(28px);
+        opacity: 0.5;
+      }
+      .pilot-wrap {
+        position: absolute;
+        width: 560px;
+        height: 640px;
+        mix-blend-mode: lighten;
+      }
+      .pilot-wrap video {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      /* Scene 1 */
+      #hook {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 150px;
+        margin: 0;
+        text-align: center;
+        font-size: 68px;
+        font-weight: 640;
+        letter-spacing: -0.02em;
+      }
+
+      /* Scene 2 */
+      #s2-copy {
+        position: absolute;
+        left: 990px;
+        top: 290px;
+        width: 800px;
+        display: flex;
+        flex-direction: column;
+        gap: 46px;
+      }
+      .keys {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        color: var(--muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 40px;
+      }
+      .key {
+        display: block;
+        min-width: 76px;
+        padding: 16px 30px;
+        border: 2px solid rgba(160, 175, 205, 0.32);
+        border-radius: 16px;
+        background: var(--panel);
+        color: var(--text);
+        font-size: 46px;
+        font-weight: 600;
+        text-align: center;
+        box-shadow: 0 9px 0 #05070b;
+      }
+      #cmd {
+        margin: 0;
+        font-size: 62px;
+        font-weight: 640;
+        line-height: 1.2;
+        letter-spacing: -0.015em;
+      }
+      #cmd .w {
+        display: inline-block;
+        margin-right: 0.24em;
+      }
+      .chip-pill {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        align-self: flex-start;
+        padding: 14px 26px;
+        border: 1.5px solid rgba(45, 212, 191, 0.45);
+        border-radius: 999px;
+        background: rgba(45, 212, 191, 0.1);
+        color: var(--text);
+        font-size: 32px;
+        font-weight: 560;
+      }
+      .dot {
+        display: block;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--teal);
+      }
+
+      /* Scene 3 */
+      #moods {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 140px;
+        display: flex;
+        justify-content: center;
+        gap: 24px;
+      }
+      .mood {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 30px;
+        border: 2px solid var(--c);
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--c) 14%, transparent);
+        font-size: 38px;
+        font-weight: 620;
+      }
+      .mood .dot {
+        background: var(--c);
+      }
+
+      /* Scene 4 */
+      .shot {
+        position: absolute;
+        left: 210px;
+        top: 96px;
+        width: 1500px;
+        height: 803px;
+        overflow: hidden;
+        border: 1px solid rgba(160, 175, 205, 0.22);
+        border-radius: 22px;
+        box-shadow: 0 40px 120px rgba(0, 0, 0, 0.6);
+        background: var(--bg);
+      }
+      .shot img {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #shot-a {
+        transform-origin: 40% 50%;
+      }
+      #shot-b {
+        transform-origin: 50% 70%;
+      }
+      .logs-mock {
+        box-sizing: border-box;
+        padding: 46px 60px;
+        background: #0b0d12;
+      }
+      .lm-head h3 {
+        margin: 0;
+        font-size: 46px;
+        font-weight: 700;
+        letter-spacing: -0.015em;
+      }
+      .lm-head p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 22px;
+      }
+      .lm-panel {
+        margin-top: 30px;
+        border: 1px solid rgba(160, 175, 205, 0.12);
+        border-radius: 20px;
+        background: #12151d;
+        overflow: hidden;
+      }
+      .lm-toolbar {
+        display: flex;
+        align-items: flex-end;
+        gap: 14px;
+        padding: 18px 22px;
+        border-bottom: 1px solid rgba(160, 175, 205, 0.12);
+      }
+      .lm-field {
+        display: grid;
+        gap: 6px;
+      }
+      .lm-field small {
+        color: #76808f;
+        font-size: 15px;
+      }
+      .lm-field b {
+        display: block;
+        padding: 9px 14px;
+        border: 1px solid rgba(160, 175, 205, 0.2);
+        border-radius: 10px;
+        background: #181c26;
+        font-size: 18px;
+        font-weight: 500;
+      }
+      .lm-grow {
+        flex: 1;
+      }
+      .lm-placeholder {
+        color: #8d96a6;
+      }
+      .lm-btn {
+        display: block;
+        padding: 9px 18px;
+        border: 1px solid rgba(160, 175, 205, 0.2);
+        border-radius: 10px;
+        color: #9aa3b4;
+        font-size: 18px;
+      }
+      .lm-rows {
+        margin: 0;
+        padding: 10px 0 16px;
+        list-style: none;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 19px;
+      }
+      .lm-row {
+        display: grid;
+        grid-template-columns: 120px 76px 110px minmax(0, 1fr);
+        gap: 14px;
+        align-items: baseline;
+        padding: 9px 22px;
+        border-left: 3px solid transparent;
+      }
+      .lm-row time,
+      .lm-row span {
+        color: #76808f;
+      }
+      .lm-row em {
+        color: #6fa8ff;
+        font-size: 15px;
+        font-style: normal;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .lm-row p {
+        margin: 0;
+      }
+      .lm-row small {
+        display: block;
+        color: #9aa3b4;
+        font-size: 17px;
+      }
+      .lm-ready {
+        border-left-color: var(--ready);
+        background: rgba(59, 217, 139, 0.07);
+      }
+      #ring {
+        position: absolute;
+        left: 736px;
+        top: 318px;
+        width: 128px;
+        height: 56px;
+        border: 3px solid var(--ready);
+        border-radius: 999px;
+        box-shadow: 0 0 24px rgba(59, 217, 139, 0.55);
+      }
+      .caption {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 52px;
+        margin: 0;
+        text-align: center;
+        font-size: 50px;
+        font-weight: 640;
+        letter-spacing: -0.015em;
+      }
+
+      /* Scene 5 */
+      #lockup {
+        position: absolute;
+        left: 150px;
+        top: 330px;
+        width: 1100px;
+      }
+      #title {
+        margin: 0;
+        font-size: 140px;
+        font-weight: 760;
+        letter-spacing: -0.035em;
+        line-height: 1;
+      }
+      #tagline {
+        margin: 26px 0 0;
+        color: var(--muted);
+        font-size: 50px;
+        font-weight: 520;
+      }
+      #byline {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 44px 0 0;
+        color: var(--pilot);
+        font-size: 30px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+      #byline .dot {
+        background: var(--pilot);
+      }
+      .corner {
+        position: absolute;
+        width: 90px;
+        height: 90px;
+        border-color: rgba(160, 175, 205, 0.35);
+        border-style: solid;
+        border-width: 0;
+      }
+      #corner-br {
+        right: 46px;
+        bottom: 46px;
+        border-right-width: 3px;
+        border-bottom-width: 3px;
+        border-bottom-right-radius: 26px;
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-width="1920"
+      data-height="1080"
+      data-duration="23.2"
+    >
+      <!-- Scene 1: Pilot wakes up -->
+      <section id="s1" class="scene clip" data-start="0" data-duration="3.7" data-track-index="0">
+        <div id="glow-1" class="glow" style="left: 650px; top: 640px; background: radial-gradient(closest-side, rgba(139, 124, 255, 0.55), transparent)"></div>
+        <h1 id="hook">Your stream just got a copilot.</h1>
+      </section>
+
+      <!-- Scene 2: say it -->
+      <section id="s2" class="scene clip" data-start="3.7" data-duration="5.26" data-track-index="0">
+        <div id="glow-2" class="glow" style="left: 270px; top: 690px; background: radial-gradient(closest-side, rgba(45, 212, 191, 0.5), transparent)"></div>
+        <div id="s2-copy">
+          <div class="keys">
+            <span id="key-alt" class="key">Alt</span>
+            <span>+</span>
+            <span id="key-x" class="key">X</span>
+          </div>
+          <p id="cmd">
+            <span class="w">“Pilot,</span><span class="w">switch</span><span class="w">to</span><span class="w">the</span><span class="w">gaming</span><span class="w">scene”</span>
+          </p>
+          <div id="wispr" class="chip-pill"><span class="dot"></span>Voice by Wispr Flow</div>
+        </div>
+      </section>
+
+      <!-- Scene 3: moods -->
+      <section id="s3" class="scene clip" data-start="8.96" data-duration="3.69" data-track-index="0">
+        <div id="glow-3" class="glow" style="left: 650px; top: 600px; background: radial-gradient(closest-side, rgba(139, 124, 255, 0.5), transparent)"></div>
+        <div id="moods">
+          <div id="m1" class="mood" style="--c: #a78bfa"><span class="dot"></span>Thinking</div>
+          <div id="m2" class="mood" style="--c: #38bdf8"><span class="dot"></span>Working</div>
+          <div id="m3" class="mood" style="--c: #ffb547"><span class="dot"></span>Asks first</div>
+          <div id="m4" class="mood" style="--c: #f472b6"><span class="dot"></span>Done</div>
+        </div>
+      </section>
+
+      <!-- Scene 4: the real app -->
+      <section id="s4" class="scene clip" data-start="12.65" data-duration="5.26" data-track-index="0">
+        <div id="shot-a" class="shot">
+          <img src="assets/img/connections.png" alt="ObscurPilot Connections screen with OBS Studio ready" />
+          <div id="ring"></div>
+        </div>
+        <div id="shot-b" class="shot logs-mock" aria-label="ObscurPilot Logs page filtered to OBS">
+          <div class="lm-head">
+            <h3>Logs</h3>
+            <p>What ObscurPilot is doing right now: connections, voice, the agent, and live sessions.</p>
+          </div>
+          <div class="lm-panel">
+            <div class="lm-toolbar">
+              <span class="lm-field"><small>Show</small><b>Info and up</b></span>
+              <span class="lm-field"><small>Source</small><b>obs</b></span>
+              <span class="lm-field lm-grow"><small>Search</small><b class="lm-placeholder">obs, refused, wispr...</b></span>
+              <span class="lm-btn">Copy</span><span class="lm-btn">Clear</span>
+            </div>
+            <ol class="lm-rows">
+              <li class="lm-row"><time>13:47:43</time><em>info</em><span>obs</span><p>OBS Studio found<small>C:\Program Files\obs-studio\bin\64bit\obs64.exe</small></p></li>
+              <li class="lm-row"><time>13:47:43</time><em>info</em><span>obs</span><p>OBS connecting<small>CONNECTING</small></p></li>
+              <li class="lm-row"><time>13:47:43</time><em>info</em><span>obs</span><p>OBS authenticating<small>HANDSHAKE_VALIDATED</small></p></li>
+              <li class="lm-row"><time>13:47:43</time><em>info</em><span>obs</span><p>OBS synchronizing<small>BUILDING_SNAPSHOT</small></p></li>
+              <li class="lm-row lm-ready"><time>13:47:43</time><em>info</em><span>obs</span><p>OBS ready<small>SYNCHRONIZED</small></p></li>
+            </ol>
+          </div>
+        </div>
+        <p id="cap-a" class="caption">One click. OBS connected.</p>
+        <p id="cap-b" class="caption">Every move, logged.</p>
+      </section>
+
+      <!-- Scene 5: drop it in the corner -->
+      <section id="s5" class="scene clip" data-start="17.91" data-duration="5.29" data-track-index="0">
+        <div id="corner-br" class="corner"></div>
+        <div id="lockup">
+          <h2 id="title">ObscurPilot</h2>
+          <p id="tagline">Hold Alt + X. Talk to your stream.</p>
+          <p id="byline"><span class="dot"></span>Built entirely by voice with Wispr Flow</p>
+        </div>
+      </section>
+
+      <!-- Pilot clips: frame-stepped renders of the app's own agent engine -->
+      <div id="pw-wake" class="pilot-wrap" style="left: 680px; top: 100px">
+        <video id="v-wake" src="assets/video/pilot-wake.mp4" data-start="0" data-duration="3.7" data-track-index="1" muted playsinline></video>
+      </div>
+      <div id="pw-listen" class="pilot-wrap" style="left: 300px; top: 150px">
+        <video id="v-listen" src="assets/video/pilot-listen.mp4" data-start="3.7" data-duration="5.26" data-track-index="1" muted playsinline></video>
+      </div>
+      <div id="pw-moods" class="pilot-wrap" style="left: 680px; top: 60px">
+        <video id="v-moods" src="assets/video/pilot-moods.mp4" data-start="8.96" data-duration="3.69" data-track-index="1" muted playsinline></video>
+      </div>
+      <div id="pw-drop" class="pilot-wrap" style="left: 680px; top: 100px">
+        <video id="v-drop" src="assets/video/pilot-drop.mp4" data-start="17.91" data-duration="5.29" data-track-index="1" muted playsinline></video>
+      </div>
+
+      <div id="fade"></div>
+
+      <!-- Audio -->
+      <audio id="music" src="assets/music/happy-beats-business-moves-vol-11-by-ende-dot-app.mp3" data-start="0" data-duration="23.2" data-track-index="2" data-volume="0.5"
+        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":0},{"t":0.4,"v":1},{"t":21.9,"v":1},{"t":23.2,"v":0}]}]}'></audio>
+      <audio id="sfx-reconnect" src="assets/sfx/impactSoft_medium_001.ogg" data-start="1.6" data-duration="0.18" data-track-index="3" data-volume="0.55"></audio>
+      <audio id="sfx-alt" src="assets/sfx/click_003.ogg" data-start="3.9" data-duration="0.01" data-track-index="4" data-volume="0.75"></audio>
+      <audio id="sfx-x" src="assets/sfx/click_002.ogg" data-start="4.02" data-duration="0.01" data-track-index="5" data-volume="0.75"></audio>
+      <audio id="sfx-w1" src="assets/sfx/keypress-003.wav" data-start="4.4" data-duration="0.3" data-track-index="3" data-volume="0.35"></audio>
+      <audio id="sfx-w2" src="assets/sfx/keypress-007.wav" data-start="4.74" data-duration="0.3" data-track-index="4" data-volume="0.35"></audio>
+      <audio id="sfx-w3" src="assets/sfx/keypress-012.wav" data-start="5.08" data-duration="0.3" data-track-index="5" data-volume="0.35"></audio>
+      <audio id="sfx-w4" src="assets/sfx/keypress-018.wav" data-start="5.42" data-duration="0.3" data-track-index="3" data-volume="0.35"></audio>
+      <audio id="sfx-w5" src="assets/sfx/keypress-024.wav" data-start="5.76" data-duration="0.3" data-track-index="4" data-volume="0.35"></audio>
+      <audio id="sfx-w6" src="assets/sfx/keypress-003.wav" data-start="6.1" data-duration="0.3" data-track-index="5" data-volume="0.35"></audio>
+      <audio id="sfx-wispr" src="assets/sfx/click2.ogg" data-start="6.8" data-duration="0.06" data-track-index="3" data-volume="0.45"></audio>
+      <audio id="sfx-m1" src="assets/sfx/click_003.ogg" data-start="8.96" data-duration="0.01" data-track-index="3" data-volume="0.4"></audio>
+      <audio id="sfx-m2" src="assets/sfx/click_002.ogg" data-start="9.75" data-duration="0.01" data-track-index="4" data-volume="0.4"></audio>
+      <audio id="sfx-m3" src="assets/sfx/click_003.ogg" data-start="10.54" data-duration="0.01" data-track-index="5" data-volume="0.4"></audio>
+      <audio id="sfx-done" src="assets/sfx/impactGlass_light_002.ogg" data-start="11.33" data-duration="0.21" data-track-index="3" data-volume="0.45"></audio>
+      <audio id="sfx-slide-a" src="assets/sfx/card-slide-1.ogg" data-start="12.6" data-duration="0.6" data-track-index="4" data-volume="0.45"></audio>
+      <audio id="sfx-slide-b" src="assets/sfx/card-slide-1.ogg" data-start="15.25" data-duration="0.6" data-track-index="5" data-volume="0.4"></audio>
+      <audio id="sfx-grab" src="assets/sfx/impactSoft_medium_004.ogg" data-start="18.11" data-duration="0.15" data-track-index="3" data-volume="0.4"></audio>
+      <audio id="sfx-bell" src="assets/sfx/impactBell_heavy_000.ogg" data-start="18.96" data-duration="1.48" data-track-index="4" data-volume="0.3"></audio>
+      <audio id="sfx-land" src="assets/sfx/impactSoft_medium_001.ogg" data-start="19.38" data-duration="0.18" data-track-index="5" data-volume="0.55"></audio>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const ease = 'power3.out';
+
+      // Scene 1: hook line rises after Pilot reconnects (beat-locked: 1.60s reconnect lives in the clip)
+      tl.fromTo('#hook', { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.55, ease }, 1.8);
+      tl.to('#hook', { opacity: 0, duration: 0.25 }, 3.45);
+      tl.to('#pw-wake', { opacity: 1, duration: 0.01 }, 0);
+
+      // Scene 2: Pilot glides left, Alt + X press, command types in word by word
+      tl.fromTo('#pw-listen', { x: 380 }, { x: 0, duration: 0.6, ease: 'power2.inOut' }, 3.7);
+      tl.fromTo('#s2-copy', { opacity: 0, x: 40 }, { opacity: 1, x: 0, duration: 0.4, ease }, 4.0);
+      tl.fromTo('#key-alt', { y: 0, boxShadow: '0 9px 0 #05070b' }, { y: 7, boxShadow: '0 2px 0 #05070b', duration: 0.08 }, 3.9);
+      tl.fromTo('#key-x', { y: 0, boxShadow: '0 9px 0 #05070b' }, { y: 7, boxShadow: '0 2px 0 #05070b', duration: 0.08 }, 4.02);
+      tl.to(['#key-alt', '#key-x'], { y: 0, boxShadow: '0 9px 0 #05070b', duration: 0.12 }, 6.5);
+      const words = gsap.utils.toArray('#cmd .w');
+      words.forEach((word, i) => {
+        tl.fromTo(word, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.22, ease }, 4.4 + i * 0.34);
+      });
+      tl.fromTo('#wispr', { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.4, ease }, 6.8);
+      tl.to('#s2-copy', { opacity: 0, duration: 0.25 }, 8.7);
+
+      // Scene 3: chips accumulate as Pilot changes mood, then hold as a set
+      // beat-grid: 8.96, 9.75, 10.54, 11.33 (every other beat region; labels stay on screen)
+      tl.fromTo('#pw-moods', { x: -380 }, { x: 0, duration: 0.5, ease: 'power2.inOut' }, 8.96);
+      ['#m1', '#m2', '#m3', '#m4'].forEach((id, i) => {
+        tl.fromTo(id, { opacity: 0, y: 22, scale: 0.92 }, { opacity: 1, y: 0, scale: 1, duration: 0.3, ease: 'back.out(1.8)' }, 8.96 + i * 0.79);
+      });
+      tl.to('#moods', { opacity: 0, duration: 0.25 }, 12.4);
+      tl.to('#pw-moods', { opacity: 0, duration: 0.25 }, 12.4);
+
+      // Scene 4: real Connections screen (beat-locked: 12.65s), push into OBS ready, then Logs
+      tl.fromTo('#shot-a', { opacity: 0, x: 160, scale: 1 }, { opacity: 1, x: 0, duration: 0.55, ease }, 12.65);
+      tl.to('#shot-a', { scale: 1.16, duration: 2.6, ease: 'sine.inOut' }, 12.9);
+      tl.fromTo('#ring', { opacity: 0, scale: 1.4 }, { opacity: 1, scale: 1, duration: 0.35, ease }, 13.5);
+      tl.fromTo('#cap-a', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4, ease }, 13.2);
+      tl.to('#cap-a', { opacity: 0, duration: 0.2 }, 15.15);
+      tl.fromTo('#shot-b', { opacity: 0, y: 140, scale: 1 }, { opacity: 1, y: 0, duration: 0.55, ease }, 15.3);
+      tl.to('#shot-b', { scale: 1.08, duration: 2.3, ease: 'sine.inOut' }, 15.5);
+      // beat-grid: log lines stream in on the pulse, then hold as a set (15.81 to 16.86)
+      gsap.utils.toArray('#shot-b .lm-row').forEach((row, i) => {
+        tl.fromTo(row, { opacity: 0, x: -18 }, { opacity: 1, x: 0, duration: 0.2, ease }, 15.81 + i * 0.26);
+      });
+      tl.fromTo('#cap-b', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4, ease }, 15.6);
+      tl.to(['#shot-b', '#cap-b'], { opacity: 0, duration: 0.2 }, 17.7);
+
+      // Scene 5: grabbed (beat-locked: 17.91s), carried to the corner, lands; lockup on beat 18.96s
+      tl.fromTo('#pw-drop', { opacity: 0 }, { opacity: 1, duration: 0.2 }, 17.91);
+      tl.fromTo('#pw-drop', { x: 0, y: 0, scale: 1 }, { x: 700, y: 370, scale: 0.6, duration: 1.1, ease: 'sine.inOut' }, 18.21);
+      tl.fromTo('#corner-br', { opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1, duration: 0.4, ease }, 19.1);
+      tl.fromTo('#title', { opacity: 0, x: -36 }, { opacity: 1, x: 0, duration: 0.6, ease }, 18.96);
+      tl.fromTo('#tagline', { opacity: 0, x: -24 }, { opacity: 1, x: 0, duration: 0.5, ease }, 19.4);
+      tl.fromTo('#byline', { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.45, ease }, 20.1);
+      tl.fromTo('#fade', { opacity: 0 }, { opacity: 1, duration: 0.5, ease: 'none' }, 22.7);
+
+      // Audio-reactive: music RMS breathes the floor glow and the lockup glow
+      const glows = ['#glow-1', '#glow-2', '#glow-3'].map((id) => document.querySelector(id));
+      const title = document.querySelector('#title');
+      for (let f = 0; f < Math.min(window.AUDIO_RMS.length, Math.ceil(23.2 * window.AUDIO_FPS)); f++) {
+        const level = window.AUDIO_RMS[f];
+        tl.call(() => {
+          for (const glow of glows) glow.style.opacity = (0.35 + 0.45 * level).toFixed(3);
+          title.style.textShadow = `0 0 ${Math.round(18 + 30 * level)}px rgba(139, 124, 255, ${(0.18 + 0.3 * level).toFixed(3)})`;
+        }, [], f / window.AUDIO_FPS);
+      }
+
+      window.__timelines['main'] = tl;
+    </script>
+  </body>
+</html>

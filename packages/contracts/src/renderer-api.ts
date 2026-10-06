@@ -7,7 +7,8 @@ import type {
   PttProjection,
   ShortcutBindings,
 } from './audio.js';
-import type { ObsProjection } from './obs.js';
+import type { ObsConnectResult, ObsProjection } from './obs.js';
+import type { LogEntry, LogsProjection } from './observability.js';
 import type { AppSnapshot, StateChanged } from './state.js';
 import type {
   CloudAuthProjection,
@@ -15,7 +16,11 @@ import type {
   CloudCredentialPayload,
 } from './cloud.js';
 import type { TwitchActivity, TwitchCategory, TwitchProjection } from './twitch.js';
-import type { AgentConfirmationDecisionPayload, AgentInteractionProjection } from './agent.js';
+import type {
+  AgentConfirmationDecisionPayload,
+  AgentInteractionProjection,
+  AgentStartResult,
+} from './agent.js';
 import type {
   ChatAnalysisProjection,
   ChatMessageProjection,
@@ -25,6 +30,7 @@ import type {
   LiveSessionProfilesProjection,
   LiveSessionProjection,
   ModerationIntentV1,
+  PilotOverlayDragPayload,
   PilotOverlayPreferences,
 } from './live-session.js';
 
@@ -51,6 +57,15 @@ export interface ObscurPilotRendererApi {
   ): () => void;
   getObsSnapshot(): Promise<ObsProjection>;
   reconnectObs(): Promise<{ accepted: true }>;
+  /** Finds OBS, enables its WebSocket server if needed, launches it, and connects. */
+  connectObs(): Promise<ObsConnectResult>;
+  /** Shows Pilot, connects OBS, and turns on hands-free voice when a Wispr Flow key is set. */
+  startPilot(): Promise<AgentStartResult>;
+  /** Turns hands-free voice off. */
+  stopPilot(): Promise<AgentStartResult>;
+  getLogs(): Promise<LogsProjection>;
+  clearLogs(): Promise<{ accepted: true }>;
+  onLogEntry(listener: (entry: Readonly<LogEntry>) => void): () => void;
   getCloudAuth(): Promise<CloudAuthProjection>;
   signInCloud(credentials: CloudCredentialPayload): Promise<CloudAuthProjection>;
   signUpCloud(credentials: CloudCredentialPayload): Promise<CloudAuthProjection>;
@@ -80,4 +95,6 @@ export interface ObscurPilotRendererApi {
   setPilotOverlayPreferences(
     preferences: PilotOverlayPreferences,
   ): Promise<PilotOverlayPreferences>;
+  dragPilotOverlay(phase: PilotOverlayDragPayload['phase']): Promise<{ accepted: true }>;
+  setPilotOverlayInteractive(interactive: boolean): Promise<{ accepted: true }>;
 }

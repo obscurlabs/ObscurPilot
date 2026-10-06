@@ -1,4 +1,4 @@
-import type { AgentInteractionProjection } from '@obscurpilot/contracts/agent';
+import type { AgentInteractionProjection, AgentStartResult } from '@obscurpilot/contracts/agent';
 import type { PttProjection } from '@obscurpilot/contracts/audio';
 import type { ObsProjection } from '@obscurpilot/contracts/obs';
 import type { ConnectionProjection } from '@obscurpilot/contracts/state';
@@ -6,13 +6,15 @@ import type { TwitchProjection } from '@obscurpilot/contracts/twitch';
 import { useEffect, useState } from 'react';
 import { VoicePresence } from '../components/voice-presence';
 import type { ActivityItem } from '../lib/activity-timeline';
+import { isConnectionUp } from '../lib/state-projection';
 
-export type HomeNavigationTarget = 'connections' | 'shortcuts' | 'live' | 'activity';
+type HomeNavigationTarget = 'connections' | 'shortcuts' | 'live' | 'activity';
 
 const PROVIDER_NAMES: Record<string, string> = {
   obs: 'OBS Studio',
   twitch: 'Twitch',
-  groq: 'Voice engine',
+  wispr: 'Wispr Flow voice',
+  groq: 'Reasoning engine',
   supabase: 'Cloud sync',
 };
 
@@ -61,7 +63,7 @@ export function HomePage({
 
   const snapshot = obs?.available === true ? obs.snapshot : undefined;
   const streaming = snapshot?.streamActive === true;
-  const attention = connections.filter((connection) => connection.phase !== 'ready').length;
+  const attention = connections.filter((connection) => !isConnectionUp(connection)).length;
   const state: BeaconState =
     pttPhase === 'arming' || pttPhase === 'capturing'
       ? 'listening'
@@ -72,6 +74,25 @@ export function HomePage({
           : 'ready';
 
   const recent = activities.slice(0, 3);
+  const [starting, setStarting] = useState(false);
+  const [startResult, setStartResult] = useState<AgentStartResult>();
+  const voiceOn = startResult?.steps.some(
+    (step) => step.label === 'Turn on voice' && step.status === 'done',
+  );
+  const startPilot = async () => {
+    setStarting(true);
+    try {
+      setStartResult(await window.obscurPilot.startPilot());
+    } catch {
+      setStartResult({
+        running: false,
+        steps: [{ label: 'Start Pilot', status: 'failed', detail: 'See the Logs page' }],
+      });
+    } finally {
+      setStarting(false);
+    }
+  };
+  const stopPilot = async () => setStartResult(await window.obscurPilot.stopPilot());
 
   return (
     <div className="op-page">
@@ -97,6 +118,33 @@ export function HomePage({
               </button>
             </span>
           </p>
+          <div className="op-hero-actions">
+            <button
+              className="op-start-button"
+              type="button"
+              disabled={starting}
+              onClick={() => void startPilot()}
+            >
+              {starting ? 'Starting Pilot…' : startResult?.running ? 'Pilot is running' : 'Start Pilot'}
+            </button>
+            {voiceOn ? (
+              <button className="secondary-button" type="button" onClick={() => void stopPilot()}>
+                Stop listening
+              </button>
+            ) : null}
+          </div>
+          {startResult === undefined ? null : (
+            <ol className="connect-steps" aria-label="Start steps">
+              {startResult.steps.map((step) => (
+                <li key={step.label} data-status={step.status}>
+                  <span>
+                    {step.label}
+                    {step.detail === undefined ? null : <small>{step.detail}</small>}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
         </div>
       </section>
 
@@ -127,7 +175,7 @@ export function HomePage({
             {connections.map((connection) => (
               <span
                 className="op-glance-dot"
-                data-ready={connection.phase === 'ready'}
+                data-ready={isConnectionUp(connection)}
                 key={connection.provider}
                 title={PROVIDER_NAMES[connection.provider] ?? connection.provider}
               />

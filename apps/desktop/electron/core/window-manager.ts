@@ -1,6 +1,5 @@
 import { resolve } from 'node:path';
-import { BrowserWindow, screen, session } from 'electron';
-import type { PilotOverlayPreferences } from '@obscurpilot/contracts/live-session';
+import { BrowserWindow, session } from 'electron';
 import { registerApplicationProtocol } from './application-protocol.js';
 
 export function createMainWindowShell(isDevelopment: boolean): BrowserWindow {
@@ -121,65 +120,4 @@ export async function createAudioCaptureWindow(
     await captureWindow.loadURL('app://bundle/audio-capture.html');
   }
   return captureWindow;
-}
-
-export async function createPilotOverlayWindow(
-  isDevelopment: boolean,
-  developmentServerUrl: URL,
-  preferences: PilotOverlayPreferences,
-): Promise<BrowserWindow> {
-  const window = new BrowserWindow({
-    width: Math.round(288 * preferences.scale),
-    height: Math.round(172 * preferences.scale),
-    show: false,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    movable: false,
-    focusable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    hasShadow: false,
-    backgroundColor: '#00000000',
-    webPreferences: {
-      contextIsolation: true,
-      devTools: isDevelopment,
-      nodeIntegration: false,
-      preload: resolve(__dirname, 'preload.cjs'),
-      sandbox: true,
-      webSecurity: true,
-    },
-  });
-  window.setAlwaysOnTop(true, 'screen-saver');
-  window.setContentProtection(true);
-  window.setIgnoreMouseEvents(preferences.clickThrough, { forward: true });
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  window.webContents.on('will-navigate', (event) => event.preventDefault());
-  if (!isDevelopment) {
-    window.webContents.on('devtools-opened', () => window.webContents.closeDevTools());
-  }
-  if (isDevelopment) {
-    await window.loadURL(new URL('/overlay.html', developmentServerUrl).href);
-  } else {
-    await window.loadURL('app://bundle/overlay.html');
-  }
-  applyPilotOverlayPreferences(window, preferences);
-  return window;
-}
-
-export function applyPilotOverlayPreferences(
-  window: BrowserWindow,
-  preferences: PilotOverlayPreferences,
-): void {
-  if (window.isDestroyed()) return;
-  const width = Math.round(288 * preferences.scale);
-  const height = Math.round(172 * preferences.scale);
-  const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea;
-  const margin = 18;
-  const left = preferences.corner.endsWith('left') ? x + margin : x + workWidth - width - margin;
-  const top = preferences.corner.startsWith('top') ? y + margin : y + workHeight - height - margin;
-  window.setBounds({ x: left, y: top, width, height }, false);
-  window.setIgnoreMouseEvents(preferences.clickThrough, { forward: true });
-  if (preferences.visible) window.showInactive();
-  else window.hide();
 }

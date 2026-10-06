@@ -47,6 +47,14 @@ export const IPC_CHANNELS = {
   chatAnalysis: 'chat:analysis:v1',
   pilotOverlayGetPreferences: 'pilot-overlay:get-preferences:v1',
   pilotOverlaySetPreferences: 'pilot-overlay:set-preferences:v1',
+  pilotOverlayDrag: 'pilot-overlay:drag:v1',
+  pilotOverlaySetInteractive: 'pilot-overlay:set-interactive:v1',
+  logsGet: 'logs:get:v1',
+  logsClear: 'logs:clear:v1',
+  logEntry: 'logs:entry:v1',
+  obsConnect: 'obs:connect:v1',
+  agentStart: 'agent:start:v1',
+  agentStop: 'agent:stop:v1',
 } as const;
 
 const RequestMetadataSchema = z

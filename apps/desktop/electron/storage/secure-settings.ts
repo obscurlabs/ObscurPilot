@@ -25,17 +25,23 @@ const SettingsSchema = z
       silenceReleaseMs: 850,
       conversationWindowMs: 300_000,
     }),
-    pilotOverlay: PilotOverlayPreferencesSchema.default({
-      visible: true,
-      corner: 'bottom_right',
-      scale: 1,
-      clickThrough: true,
-    }),
+    pilotOverlay: z
+      .preprocess(migratePilotOverlay, PilotOverlayPreferencesSchema)
+      .default({ visible: true, corner: 'bottom_right', scale: 1, locked: false }),
     liveSessionProfiles: z.array(LiveSessionProfileV1Schema).max(20).default([]),
     activeLiveSessionProfileId: z.string().uuid().optional(),
   })
   .strict();
 export type SecureSettings = z.infer<typeof SettingsSchema>;
+
+// Before the draggable Pilot, a whole-window `clickThrough` flag stood in for `locked`.
+// The strict schema would otherwise reject saved settings and reset every preference.
+function migratePilotOverlay(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || !('clickThrough' in value)) return value;
+  const migrated: Record<string, unknown> = { ...value, locked: false };
+  delete migrated.clickThrough;
+  return migrated;
+}
 
 export class SecureSettingsStore {
   private value: SecureSettings = SettingsSchema.parse({});

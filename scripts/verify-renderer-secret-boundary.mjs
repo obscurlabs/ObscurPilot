@@ -5,6 +5,7 @@ import process from 'node:process';
 const root = resolve(process.cwd(), 'apps/desktop/dist-renderer');
 const textExtensions = new Set(['.css', '.html', '.js', '.json', '.map']);
 const forbiddenMarkers = [
+  'WISPR_FLOW_API_KEY',
   'GROQ_API_KEY',
   'OBS_WEBSOCKET_PASSWORD',
   'SUPABASE_ANON_KEY',

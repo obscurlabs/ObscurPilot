@@ -170,11 +170,18 @@ class ObsSdkTransport implements ObsTransport {
   }
 }
 
-export interface ObsBridgeOptions {
+export interface ObsCredentials {
   readonly url: string;
   readonly password?: string;
+}
+
+export interface ObsBridgeOptions {
+  /** Read before every connection attempt, so changed OBS settings apply without a restart. */
+  readonly credentials: () => ObsCredentials;
   readonly transport?: ObsTransport;
   readonly onConnection: (projection: ConnectionProjection) => void;
+  /** The underlying cause of a failed attempt, for logs only. Never carries credentials. */
+  readonly onFailure?: (reasonCode: string, cause: string) => void;
   readonly onSnapshot?: (snapshot: ObsSnapshot) => void;
   readonly now?: () => number;
   readonly id?: () => string;
@@ -217,9 +224,12 @@ export class ObsBridge {
     void this.connectAndSynchronize();
   }
 
+  /** User-initiated: skips any accumulated backoff and tries again right away. */
   public async reconnect(): Promise<void> {
     if (this.stopped) return;
     clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
+    this.attempt = 0;
     await this.transport.disconnect().catch(() => undefined);
     this.handleDisconnect();
   }
@@ -294,7 +304,8 @@ export class ObsBridge {
     this.snapshotValue = undefined;
     this.emit(this.attempt === 0 ? 'connecting' : 'reconnecting', this.attempt, 'CONNECTING');
     try {
-      const handshake = await this.transport.connect(this.options.url, this.options.password);
+      const { url, password } = this.options.credentials();
+      const handshake = await this.transport.connect(url, password);
       if (handshake.rpcVersion !== 1 || handshake.negotiatedRpcVersion !== 1) {
         throw new ObsBridgeError('VERSION_MISMATCH', 'OBS WebSocket RPC version 1 is required');
       }
@@ -312,13 +323,16 @@ export class ObsBridge {
       if (this.stopped || generation !== this.generation) return;
       await this.transport.disconnect().catch(() => undefined);
       if (isAuthError(error)) {
+        this.options.onFailure?.('AUTH_REQUIRED', describeFailure(error));
         this.emit('auth_required', this.attempt, 'AUTH_REQUIRED');
         return;
       }
       if (error instanceof ObsBridgeError && error.code === 'VERSION_MISMATCH') {
+        this.options.onFailure?.('VERSION_MISMATCH', describeFailure(error));
         this.emit('degraded', this.attempt, 'VERSION_MISMATCH');
         return;
       }
+      this.options.onFailure?.('RETRYABLE_FAILURE', describeFailure(error));
       this.emit('backoff', this.attempt, 'RETRYABLE_FAILURE');
       this.scheduleReconnect();
     }
@@ -620,6 +634,12 @@ export function createObsProductionTools(
       }),
     ),
   ];
+}
+
+function describeFailure(error: unknown): string {
+  if (!(error instanceof Error)) return 'Unknown failure';
+  const code = 'code' in error && error.code !== undefined ? ` (code ${String(error.code)})` : '';
+  return (error.message || error.name).slice(0, 300) + code;
 }
 
 function isAuthError(error: unknown): boolean {

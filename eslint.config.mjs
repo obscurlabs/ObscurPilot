@@ -14,6 +14,7 @@ export default tseslint.config(
       '**/.types/**',
       'artifacts/**',
       '.remember/**',
+      'brag-output/**',
     ],
   },
   js.configs.recommended,

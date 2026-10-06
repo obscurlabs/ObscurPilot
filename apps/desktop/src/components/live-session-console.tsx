@@ -27,7 +27,7 @@ const DEFAULT_OVERLAY: PilotOverlayPreferences = {
   visible: true,
   corner: 'bottom_right',
   scale: 1,
-  clickThrough: true,
+  locked: false,
 };
 type Draft = {
   id: string;
@@ -236,10 +236,18 @@ export function LiveSessionConsole({ obs }: { readonly obs: ObsProjection | unde
       setPending(undefined);
     }
   };
-  const saveOverlay = async (value: PilotOverlayPreferences) => {
-    setOverlay(value);
+  // Merge into the live value: the Pilot may have been dragged since this panel loaded.
+  // Choosing a corner explicitly drops the dragged-to anchor.
+  const saveOverlay = async (patch: Partial<PilotOverlayPreferences>) => {
     try {
-      setOverlay(await window.obscurPilot.setPilotOverlayPreferences(value));
+      const { anchor, ...current } = await window.obscurPilot.getPilotOverlayPreferences();
+      const next: PilotOverlayPreferences = {
+        ...current,
+        ...patch,
+        ...(anchor !== undefined && patch.corner === undefined ? { anchor } : {}),
+      };
+      setOverlay(next);
+      setOverlay(await window.obscurPilot.setPilotOverlayPreferences(next));
     } catch {
       setNotice('Overlay preference could not be applied');
     }
@@ -632,20 +640,18 @@ export function LiveSessionConsole({ obs }: { readonly obs: ObsProjection | unde
                     type="checkbox"
                     checked={overlay.visible}
                     onChange={(event) =>
-                      void saveOverlay({ ...overlay, visible: event.target.checked })
+                      void saveOverlay({ visible: event.target.checked })
                     }
                   />
-                  Show corner Pilot
+                  Show Pilot
                 </label>
                 <label>
                   <input
                     type="checkbox"
-                    checked={overlay.clickThrough}
-                    onChange={(event) =>
-                      void saveOverlay({ ...overlay, clickThrough: event.target.checked })
-                    }
+                    checked={overlay.locked}
+                    onChange={(event) => void saveOverlay({ locked: event.target.checked })}
                   />
-                  Click-through
+                  Lock Pilot in place
                 </label>
                 <label>
                   Corner
@@ -653,7 +659,6 @@ export function LiveSessionConsole({ obs }: { readonly obs: ObsProjection | unde
                     value={overlay.corner}
                     onChange={(event) =>
                       void saveOverlay({
-                        ...overlay,
                         corner: event.target.value as PilotOverlayPreferences['corner'],
                       })
                     }
@@ -669,7 +674,7 @@ export function LiveSessionConsole({ obs }: { readonly obs: ObsProjection | unde
                   <select
                     value={overlay.scale}
                     onChange={(event) =>
-                      void saveOverlay({ ...overlay, scale: Number(event.target.value) })
+                      void saveOverlay({ scale: Number(event.target.value) })
                     }
                   >
                     <option value={0.75}>75%</option>
@@ -680,7 +685,8 @@ export function LiveSessionConsole({ obs }: { readonly obs: ObsProjection | unde
                 </label>
               </div>
               <p className="capture-boundary">
-                Content protection is active. Verify the overlay stays excluded from OBS capture.
+                Drag Pilot to any screen edge or corner; it snaps into place. Content protection is
+                active. Verify the overlay stays excluded from OBS capture.
               </p>
             </div>
           </div>
