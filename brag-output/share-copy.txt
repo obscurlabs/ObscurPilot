@@ -1,1 +1,0 @@
-Introducing ObscurPilot: hold Alt + X and talk to your stream. Its LED-faced sidekick Pilot listens through Wispr Flow, asks before it acts, and connects OBS in one click. Built entirely by voice with Wispr Flow.
