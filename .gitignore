@@ -25,3 +25,6 @@ Thumbs.db
 
 # Local browser-automation captures
 .playwright-mcp/
+
+# Generated launch and showcase videos
+brag-output/
